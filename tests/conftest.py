@@ -41,6 +41,9 @@ def _clean():
             "select tablename from pg_tables where schemaname='public' and tablename not in ('alembic_version','api_keys','installation')"))]
         s.execute(text("TRUNCATE " + ", ".join(tables) + " RESTART IDENTITY CASCADE"))
         s.execute(text("DELETE FROM api_keys WHERE role = 'worker'"))
+    with db.session() as s:  # a TRUNCATE CASCADE a projects FK miatt az api_keys-t is üríti
+        from agenthub import auth
+        auth.bootstrap_from_files(s)
     yield
 
 

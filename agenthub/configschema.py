@@ -46,6 +46,8 @@ class GlobalConfig(Strict):
     lease_ttl_s: int = Field(default=3600, ge=300, le=86400)
     agent_stale_after_s: int = Field(default=900, ge=60, le=86400)
     models: ModelStrategy = Field(default_factory=ModelStrategy)
+    # CLI-adapterben futtatható programok (SPECIFICATION 11): csak ami itt szerepel
+    cli_executables: list[str] = Field(default_factory=list)
     routing_rules: list[RoutingRule] = Field(default_factory=list)
     retention_days: int | None = Field(default=None, ge=1)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"

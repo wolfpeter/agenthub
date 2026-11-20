@@ -75,6 +75,10 @@ def save_config(s, who: Principal, scope: str, data: dict, comment: str | None =
     scope_id = getattr(cfg, "id", "") or ""
     if scope == "source" and cfg.project and not s.get(Project, cfg.project):
         raise Invalid(f"ismeretlen projekt: {cfg.project}")
+    if scope == "source" and cfg.adapter_type == "cli":
+        exe = cfg.settings.get("executable")
+        if exe not in global_config(s).cli_executables:
+            raise Invalid(f"a(z) '{exe}' program nincs a global.cli_executables engedélyezett listában")
     if scope == "global":
         known = {p for (p,) in s.execute(select(Project.id))}
         bad = [r.project for r in cfg.routing_rules if r.project not in known]

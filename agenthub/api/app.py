@@ -704,6 +704,7 @@ def coordinator_context(request: Request, p: Principal = Coord):
         gc = sv.global_config(s)
         return {"control": sv.control_state(s, "coordinator"),
                 "poll_interval_s": gc.coordinator_poll_interval_s, "model": gc.coordinator_model,
+                "cli_executables": gc.cli_executables,
                 "sources": [ser.row(x) for x in s.scalars(select(Source).where(Source.is_active.is_(True)))],
                 "projects": [{"id": x.id, "name": x.name} for x in s.scalars(select(Project).where(Project.is_active.is_(True)))]}
 

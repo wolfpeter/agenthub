@@ -196,11 +196,14 @@ def test_knowledge_review_and_isolation(dash, two_projects):
 # ------------------------------------------------------------ források, Coordinator
 
 def test_ingest_idempotent_routing_and_triage(dash, coord, two_projects):
-    dash.post("/api/config/source", {"data": {"id": "mail", "name": "Levél", "adapter_type": "cli",
-                                              "settings": {"executable": "echo", "fields": {"external_id": "id", "title": "t"}}}})
+    src = {"data": {"id": "mail", "name": "Levél", "adapter_type": "cli",
+                    "settings": {"executable": "echo", "fields": {"external_id": "id", "title": "t"}}}}
+    dash.post("/api/config/source", src, ok=400)  # nincs az engedélyezett listán
     g = dash.get("/api/config/global")["current"]
     g["routing_rules"] = [{"project": "beta", "title": "^\\[beta\\]"}]
+    g["cli_executables"] = ["echo"]
     dash.post("/api/config/global", {"data": g})
+    dash.post("/api/config/source", src)
     items = [{"external_id": "1", "title": "[beta] leállt"}, {"external_id": "2", "title": "Valami más"}]
     r = coord.post("/api/sources/mail/events", {"items": items})
     assert len(r["created"]) == 2 and len(r["routed"]) == 1

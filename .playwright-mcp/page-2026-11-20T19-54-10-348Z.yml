@@ -1,0 +1,85 @@
+- generic [ref=f2e2]:
+  - banner [ref=f2e3]:
+    - generic [ref=f2e37]:
+      - heading "Használat (24 óra)" [level=3] [ref=f2e38]
+      - generic [ref=f2e39]:
+        - text: 3 futás · 15 400 token ·
+        - generic "A költség becsült érték" [ref=f2e40]: ~$0.12 (becslés)
+    - generic [ref=f2e41]:
+      - heading "Koordinátor" [level=3] [ref=f2e42]
+      - generic [ref=f2e43]:
+        - generic [ref=f2e44]: nem fut
+        - button "Leállít" [ref=f2e45] [cursor=pointer]
+    - generic [ref=f2e46]:
+      - heading "Workerek" [level=3] [ref=f2e47]
+      - generic [ref=f2e48]:
+        - generic [ref=f2e49]: fut
+        - generic [ref=f2e51]: "#7 · 1 perce"
+        - button "Leállít" [ref=f2e52] [cursor=pointer]
+    - generic [ref=f2e53]:
+      - heading "Források" [level=3] [ref=f2e54]
+      - generic [ref=f2e55]:
+        - generic [ref=f2e56]: "Levelezés:"
+        - generic [ref=f2e57]: 11. 20. 20:49
+    - generic [ref=f2e9]:
+      - button "+ Új feladat" [ref=f2e10] [cursor=pointer]
+      - generic "Élő kapcsolat" [ref=f2e58]: élő
+      - button "Kilépés" [ref=f2e13] [cursor=pointer]
+  - navigation "Nézetek" [ref=f2e14]:
+    - link "Tábla" [ref=f2e15] [cursor=pointer]:
+      - /url: "#/board"
+    - link "Jóváhagyás(2)" [ref=f2e59] [cursor=pointer]:
+      - /url: "#/approval"
+      - text: Jóváhagyás
+      - generic [ref=f2e60]: (2)
+    - link "Tudás(1)" [ref=f2e61] [cursor=pointer]:
+      - /url: "#/knowledge"
+      - text: Tudás
+      - generic [ref=f2e62]: (1)
+    - link "Ágensek" [ref=f2e18] [cursor=pointer]:
+      - /url: "#/agents"
+    - link "Konfiguráció" [ref=f2e19] [cursor=pointer]:
+      - /url: "#/config"
+  - generic [ref=f2e63]:
+    - heading "Jóváhagyási központ" [level=2] [ref=f2e64]
+    - generic [ref=f2e65]:
+      - generic [ref=f2e66]:
+        - generic [ref=f2e67]: email
+        - generic [ref=f2e68]: send
+        - generic [ref=f2e69]: ugyfel@example.com
+        - generic [ref=f2e70]: jóváhagyásra vár
+        - generic [ref=f2e71]:
+          - text: 1 perce ·
+          - link "#3" [ref=f2e72] [cursor=pointer]:
+            - /url: "#/approval"
+      - generic [ref=f2e73]: "{ \"to\": \"ugyfel@example.com\", \"body\": \"Szia, a hiba javítva.\", \"subject\": \"Javítás kész\" }"
+      - generic [ref=f2e74]:
+        - textbox "Megjegyzés (opcionális)" [ref=f2e75]
+        - button "Jóváhagy" [ref=f2e76] [cursor=pointer]
+        - button "Elutasít" [ref=f2e77] [cursor=pointer]
+        - button "Kézzel végrehajtottam" [ref=f2e78] [cursor=pointer]
+    - generic [ref=f2e79]:
+      - generic [ref=f2e80]:
+        - generic [ref=f2e81]: file
+        - generic [ref=f2e82]: write_file
+        - generic [ref=f2e83]: README.md
+        - generic [ref=f2e84]: jóváhagyásra vár
+        - generic [ref=f2e85]:
+          - text: 1 perce ·
+          - link "#1" [ref=f2e86] [cursor=pointer]:
+            - /url: "#/approval"
+      - generic [ref=f2e87]: "Fájl: README.md"
+      - generic [ref=f2e88]:
+        - generic [ref=f2e89]: "--- a/README.md"
+        - generic [ref=f2e90]: +++ b/README.md
+        - generic [ref=f2e91]: "@@ -1,2 +1,3 @@"
+        - generic [ref=f2e92]: "# Alfa"
+        - generic [ref=f2e93]: "-régi sor"
+        - generic [ref=f2e94]: +új sor
+        - generic [ref=f2e95]: +még egy
+      - generic [ref=f2e96]:
+        - textbox "Megjegyzés (opcionális)" [ref=f2e97]
+        - button "Jóváhagy" [ref=f2e98] [cursor=pointer]
+        - button "Elutasít" [ref=f2e99] [cursor=pointer]
+        - button "Kézzel végrehajtottam" [ref=f2e100] [cursor=pointer]
+  - status

@@ -1,0 +1,10 @@
+.git
+.venv
+.env
+secrets
+data
+backups
+frontend/node_modules
+agenthub/static
+**/__pycache__
+tests

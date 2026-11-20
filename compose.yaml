@@ -1,0 +1,38 @@
+# AgentHub szolgáltatások: API + Dashboard és PostgreSQL (SPECIFICATION 3.2).
+# A Claude Code agentek NEM innen indulnak: kézzel, látható terminálban.
+name: ${AGENTHUB_INSTANCE:-agenthub}
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agenthub
+      POSTGRES_DB: agenthub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?a .env-ben kell}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agenthub -d agenthub"]
+      interval: 5s
+      retries: 20
+
+  api:
+    build: .
+    restart: unless-stopped
+    user: "${AGENTHUB_UID:-1000}:${AGENTHUB_GID:-1000}"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      AGENTHUB_DATABASE_URL: postgresql+psycopg://agenthub:${POSTGRES_PASSWORD}@db:5432/agenthub
+      AGENTHUB_SECRETS_DIR: /secrets
+      AGENTHUB_DATA_DIR: /data
+    volumes:
+      - ./secrets:/secrets:ro
+      - ./data:/data
+    ports:
+      - "${AGENTHUB_BIND:-0.0.0.0}:${AGENTHUB_PORT:-8790}:8000"
+
+volumes:
+  pgdata:
