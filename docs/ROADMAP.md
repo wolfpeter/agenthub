@@ -27,7 +27,7 @@ Fontos: a Claude Code skill-felismerés, session resume és modellváltás ponto
 
 | Milestone | Státusz | Megjegyzés / dátum |
 | --- | --- | --- |
-| M0 – Technikai validáció | Kész | Mérve, lásd docs/M0-VALIDATION.md (2026-11-20) |
+| M0 – Technikai validáció | Kész | Mérve, lásd docs/M0-VALIDATION.md; a perjeles skillhívás és a háttér-ébresztés nincs mérve (2026-11-20) |
 | M1 – Első működő AgentHub | Kész | E2E mérve valódi Claude-sessionnel (2026-11-20) |
 | M2 – Többprojekt és izoláció | Kész | Izoláció API-tesztekkel és Claude permission-méréssel |
 | M3 – Emberi közreműködés és jóváhagyás | Kész | Kérdés/válasz, jóváhagyás, író adapter (mock) |
@@ -50,10 +50,10 @@ Nincs; kis prototípusokkal indul.
 - [x] Claude Code aktuális skill-formátumának és telepítési helyének ellenőrzése.
 - [x] Egy minimális /coordinator és /worker skill kézi indítása külön terminálból.
 - [x] Bizonyítani, hogy a skill képes az AgentHub API-t meghívni és választ feldolgozni.
-- [x] Session ID és dokumentált session-resume folyamat kipróbálása; CLI kézi újraindításával.
+- [x] Session ID és dokumentált session-resume folyamat kipróbálása; CLI kézi újraindításával. (Resume mérve; az új sessionben folytatás valódi sessionnel nincs mérve.)
 - [x] Projektkönyvtár és API-hozzáférés korlátozásának prototípusos tesztje.
 - [x] A használt Claude Code verzió modellválasztási lehetőségeinek feljegyzése.
-- [x] Modellhívás nélküli várakozás kipróbálása: háttérparancs befejeződésére ébredés, illetve az előtérparancs időkorlátja; egy üres ciklus tokenköltségének mérése.
+- [x] Modellhívás nélküli várakozás kipróbálása: háttérparancs befejeződésére ébredés, illetve az előtérparancs időkorlátja; egy üres ciklus tokenköltségének mérése. (Előtérparancs és költség mérve; a háttér-ébresztés nem.)
 - [x] Ticketenkénti friss kontextus (alügynök) kipróbálása a Workerben.
 - [x] Claude Code permission-szabály, amely a Workert a projekt working directoryjára korlátozza.
 
@@ -200,13 +200,13 @@ M1–M5 fő funkciói stabilak.
 
 ### Feladatlista
 
-- [x] GitHub main/latest telepítési folyamat és egyszerű install script.
+- [x] GitHub main/latest telepítési folyamat és egyszerű install script. (Helyi klónból mérve; a curl-ös út a privát repó miatt csak a publikussá tétel után működik.)
 - [x] Frissítés előtt adatbázis- és konfigurációmentés.
 - [x] Backup/restore parancsok és dokumentáció.
 - [x] DB migrációk és frissítés utáni health check.
 - [x] Titkok maszkolása, Dashboard hozzáférés és hálózati beállítások hardeningje.
 - [x] Alap logok, agent heartbeat, futási idő és becsült költség megjelenítése.
-- [x] Teszt: Worker megszakadása, lease lejárat, ticket folytatása és session fallback.
+- [x] Teszt: Worker megszakadása, lease lejárat, ticket folytatása és session fallback. (API-tesztek és `--resume` mérés; a fallback valódi sessionnel nincs mérve.)
 - [x] End-to-end teszt: forrás vagy manuális ticket → Coordinator → Worker → eredmény → Dashboard.
 - [ ] Tiszta Ubuntu VM-en telepítési és visszaállítási próba. (A fejlesztő VM-en, külön könyvtárba telepítve mérve; tiszta VM-en még nem.)
 

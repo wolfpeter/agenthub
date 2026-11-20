@@ -97,7 +97,7 @@ def run_imap(cfg) -> list[dict]:
 def run_trello(cfg, client=None) -> list[dict]:
     c = client or httpx.Client(timeout=60)
     params = {"key": secretstore.get(cfg.key_secret), "token": secretstore.get(cfg.token_secret),
-              "fields": "name,desc,shortUrl,idList,dateLastActivity"}
+              "fields": "name,desc,shortUrl,shortLink,idList,dateLastActivity"}
     r = c.get(f"https://api.trello.com/1/boards/{cfg.board_id}/cards", params=params)
     if r.status_code >= 300:
         raise AdapterError(f"Trello {r.status_code}")
@@ -105,7 +105,8 @@ def run_trello(cfg, client=None) -> list[dict]:
     for card in r.json():
         if cfg.lists and card.get("idList") not in cfg.lists:
             continue
-        out.append({"external_id": card["id"], "title": card.get("name"), "description": card.get("desc") or "",
+        # shortLink: stabil, a kártya URL-jében is ez szerepel, és az író adapter is elfogadja
+        out.append({"external_id": card.get("shortLink") or card["id"], "title": card.get("name"), "description": card.get("desc") or "",
                     "url": card.get("shortUrl"), "updated_at": card.get("dateLastActivity")})
     return out
 

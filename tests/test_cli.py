@@ -148,3 +148,24 @@ def test_skills_install_refuses_foreign_skill(env, capsys, tmp_path):
     assert "AgentHub Worker" in (target / "worker" / "SKILL.md").read_text()
     backups = list((env[0] / "backups" / "skills").rglob("SKILL.md"))
     assert backups and backups[0].read_text() == "régi skill"
+
+
+def test_agent_session_cannot_run_admin_commands(env, capsys, monkeypatch):
+    home, proj = env
+    run(capsys, "project", "add", "--id", "demo", "--dir", str(proj))
+    run(capsys, "worker", "command", "--project", "demo")
+    st = json.loads((home / "data/projects/demo/claude-settings.json").read_text())
+    perms = st["permissions"]
+    assert "Bash(agenthub:*)" not in perms["allow"]
+    assert "Bash(agenthub key:*)" in perms["deny"] and "Bash(agenthub coordinator:*)" in perms["deny"]
+    assert "Bash(agenthub worker command:*)" in perms["deny"] and "Bash(agenthub ticket:*)" in perms["allow"]
+    assert st["env"] == {"AGENTHUB_ROLE": "worker", "AGENTHUB_PROJECT": "demo"}
+    monkeypatch.setenv("AGENTHUB_ROLE", "worker")
+    monkeypatch.setenv("AGENTHUB_PROJECT", "demo")
+    for args in (["key", "show"], ["config", "export"], ["coordinator", "go", "1", "--reason", "x"],
+                 ["worker", "command"], ["ticket", "show", "1", "--project", "other"]):
+        with pytest.raises(SystemExit):
+            cli.main(args)
+    monkeypatch.setenv("AGENTHUB_ROLE", "coordinator")
+    with pytest.raises(SystemExit):
+        cli.main(["ticket", "show", "1"])

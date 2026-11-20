@@ -351,8 +351,17 @@ def classify(s, who: Principal, t: Ticket, project_id: str | None, ttype: str | 
 
 # ---------------------------------------------------------------- Worker
 
-def _instance_alive(gc: GlobalConfig, inst: AgentInstance) -> bool:
-    return inst.status == "running" and (now() - inst.last_heartbeat).total_seconds() < gc.agent_stale_after_s
+def instance_alive(s, gc: GlobalConfig, inst: AgentInstance) -> bool:
+    """Él, ha friss a jele, vagy érvényes lease-t tart (hosszú ticketmunka közben nincs CLI-hívás)."""
+    if inst.status != "running":
+        return False
+    if (now() - inst.last_heartbeat).total_seconds() < gc.agent_stale_after_s:
+        return True
+    if inst.active_ticket_id:
+        t = s.get(Ticket, inst.active_ticket_id)
+        return bool(t and t.status == "IN_PROGRESS" and t.assigned_worker_id == inst.id
+                    and t.lease_expires_at and t.lease_expires_at > now())
+    return False
 
 
 def register_agent(s, who: Principal, instance_id: str, session_id: str | None, working_directory: str | None,
@@ -364,7 +373,7 @@ def register_agent(s, who: Principal, instance_id: str, session_id: str | None, 
                                     AgentInstance.status == "running").with_for_update()
     q = q.where(AgentInstance.project_id == who.project_id) if who.project_id else q.where(AgentInstance.project_id.is_(None))
     for other in s.scalars(q):
-        if _instance_alive(gc, other) and not takeover:
+        if instance_alive(s, gc, other) and not takeover:
             raise Invalid(f"már fut egy {who.role} ({other.id}, utolsó jel: {other.last_heartbeat:%H:%M:%S}). "
                           "Ha az már nem él, indítsd --takeover kapcsolóval.")
         other.status = "stopped"

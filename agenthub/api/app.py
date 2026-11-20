@@ -169,10 +169,6 @@ def project_key(pid: str, p: Principal = Dash):
 
 # ---------------------------------------------------------------- Dashboard-állapot és SSE
 
-def _alive(gc, inst):
-    return inst.status == "running" and (now() - inst.last_heartbeat).total_seconds() < gc.agent_stale_after_s
-
-
 @app.get("/api/state")
 def state(p: Principal = Dash):
     since = now() - timedelta(hours=24)
@@ -206,7 +202,7 @@ def state(p: Principal = Dash):
         for a in s.scalars(select(AgentInstance).order_by(AgentInstance.last_heartbeat.desc())):
             if a.status == "running" or a.last_heartbeat >= since:
                 d = ser.row(a)
-                d["alive"] = _alive(gc, a)
+                d["alive"] = sv.instance_alive(s, gc, a)
                 agents.append(d)
         sources = [ser.row(x, exclude=("config",)) for x in s.scalars(select(Source).order_by(Source.id))]
         events = []

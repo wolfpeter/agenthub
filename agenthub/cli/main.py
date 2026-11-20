@@ -125,8 +125,11 @@ def save_state(name: str, data: dict):
 # ---------------------------------------------------------------- projekt feloldása a könyvtárból
 
 def project_for_cwd(explicit: str | None = None) -> str:
-    if explicit:
-        return explicit
+    bound = os.environ.get("AGENTHUB_PROJECT")
+    if bound and explicit and explicit != bound:
+        die(f"ez a session a(z) {bound} projekthez tartozik; másik projekt nem érhető el")
+    if explicit or bound:
+        return explicit or bound
     keys = secrets() / "projects"
     cwd = os.path.realpath(os.getcwd())
     best = None
@@ -279,21 +282,33 @@ def cmd_project(a):
 
 # ---------------------------------------------------------------- Worker
 
-def claude_settings(project: dict, all_projects: list[dict]) -> dict:
-    """Projektizoláció Claude Code permission-szabályokkal (SPECIFICATION 18)."""
+AGENT_COMMANDS = {"worker": ("worker", "ticket", "memory"), "coordinator": ("coordinator",)}
+ADMIN_COMMANDS = ("init", "welcome", "up", "doctor", "key", "project", "worker command", "coordinator command",
+                  "source", "config", "skills", "backup", "restore", "update")
+
+
+def _agent_rules(role: str) -> tuple[list[str], list[str]]:
+    """Az agent csak a saját szerepének agenthub-parancsait futtathatja; az admin parancsokat nem (kulcsok!)."""
+    allow = [f"Bash(agenthub {c}:*)" for c in AGENT_COMMANDS[role]]
+    deny = [f"Bash(agenthub {c}:*)" for c in ADMIN_COMMANDS]
+    deny += [f"Bash(agenthub {c}:*)" for r, cs in AGENT_COMMANDS.items() if r != role for c in cs]
     h = home()
-    deny = []
     for path in [str(secrets()), str(h / "data"), str(h / "backups")]:
         deny += [f"Read(/{path}/**)", f"Edit(/{path}/**)"]
+    return allow, deny
+
+
+def claude_settings(project: dict, all_projects: list[dict]) -> dict:
+    """Projektizoláció Claude Code permission-szabályokkal (SPECIFICATION 18)."""
+    allow, deny = _agent_rules("worker")
     for other in all_projects:
         if other["id"] != project["id"]:
             wd = other["working_directory"]
             deny += [f"Read(/{wd}/**)", f"Edit(/{wd}/**)"]
     wc = (project.get("config") or {}).get("worker", {})
-    # az agenthub parancsok mindig futhatnak: ezeken át dolgozik a Worker skill
-    perms = {"deny": deny, "allow": ["Bash(agenthub:*)", *wc.get("allowed_tools", [])],
+    perms = {"deny": deny, "allow": [*allow, *wc.get("allowed_tools", [])],
              "defaultMode": wc.get("permission_mode", "acceptEdits")}
-    return {"permissions": perms, "env": {"AGENTHUB_PROJECT": project["id"]}}
+    return {"permissions": perms, "env": {"AGENTHUB_ROLE": "worker", "AGENTHUB_PROJECT": project["id"]}}
 
 
 def cmd_worker(a):
@@ -502,8 +517,13 @@ def _due(src: dict, now: float) -> bool:
 
 def cmd_coordinator(a):
     if a.action == "command":
+        allow, deny = _agent_rules("coordinator")
+        sf = home() / "data" / "coordinator-settings.json"
+        sf.parent.mkdir(parents=True, exist_ok=True)
+        sf.write_text(json.dumps({"permissions": {"allow": allow, "deny": deny},
+                                  "env": {"AGENTHUB_ROLE": "coordinator"}}, indent=2))
         sid = str(uuid.uuid4())
-        print(f"cd {home()} && AGENTHUB_SESSION_ID={sid} claude --session-id {sid} --settings {home() / '.claude' / 'settings.json'}")
+        print(f"cd {home()} && AGENTHUB_SESSION_ID={sid} claude --session-id {sid} --settings {sf}")
         print("# ...majd a sessionben: /coordinator")
         return
     if a.action == "start":
@@ -889,6 +909,11 @@ def main(argv=None):
     sub.add_parser("update", help="mentés + frissítés a GitHubról + migráció + health check").set_defaults(fn=cmd_update)
 
     a = p.parse_args(argv)
+    role = os.environ.get("AGENTHUB_ROLE")
+    if role:  # agent-sessionből csak a saját szerep parancsai (a permission-szabályok mellett, második védvonal)
+        full = f"{a.cmd} {getattr(a, 'action', '')}".strip()
+        if a.cmd not in AGENT_COMMANDS.get(role, ()) or full in ADMIN_COMMANDS:
+            die(f"'agenthub {full}' agent-sessionből ({role}) nem futtatható")
     a.fn(a)
 
 

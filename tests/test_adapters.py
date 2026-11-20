@@ -34,10 +34,10 @@ def test_cli_adapter_no_shell_and_limits():
 def test_trello_reader_filters_lists():
     def h(req):
         assert req.url.params["token"] == "tttttttttt"
-        return httpx.Response(200, json=[{"id": "c1", "name": "A", "idList": "L1", "shortUrl": "u"},
+        return httpx.Response(200, json=[{"id": "c1", "shortLink": "AbCd1234", "name": "A", "idList": "L1", "shortUrl": "u"},
                                          {"id": "c2", "name": "B", "idList": "L2"}])
     items = adapters.run_trello(TrelloAdapterConfig(board_id="b", lists=["L1"]), client(h))
-    assert [i["external_id"] for i in items] == ["c1"]
+    assert [i["external_id"] for i in items] == ["AbCd1234"]
 
 
 def test_jira_reader():

@@ -277,3 +277,26 @@ def test_cookie_login_and_csrf(client):
     assert r.status_code == 403  # Origin nélkül nem
     r = client.post("/api/control", json={"name": "coordinator", "state": "stop"}, headers={"Origin": "http://testserver"})
     assert r.status_code == 200
+
+
+def _age(sql, **params):
+    from sqlalchemy import text
+    from agenthub import db
+    with db.session() as s:
+        s.execute(text(sql), params)
+
+
+def test_worker_with_valid_lease_counts_alive(client, dash):
+    k = make_project(dash, "solo")
+    w1, w2 = Api(client, k, "i1"), Api(client, k, "i2")
+    w1.post("/api/agents/register", {"instance_id": "i1"})
+    t = new(dash, "solo", start_approved=True)
+    nxt(w1)
+    _age("update agent_instances set last_heartbeat = now() - interval '2 hours' where id = 'i1'")
+    w2.post("/api/agents/register", {"instance_id": "i2"}, ok=400)  # lease él: nem halott
+    assert next(a for a in dash.get("/api/state")["agents"] if a["id"] == "i1")["alive"] is True
+    _age("update tickets set lease_expires_at = now() - interval '1 minute' where id = :i", i=t["id"])
+    w2.post("/api/agents/register", {"instance_id": "i2"})
+    got = nxt(w2)  # lejárt lease: az új példány folytatja, eseménnyel
+    assert got["ticket"]["id"] == t["id"] and got["resumed"] is True
+    assert [e["event_type"] for e in dash.get(f"/api/tickets/{t['id']}")["events"]].count("resumed") == 1
