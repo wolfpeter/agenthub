@@ -82,14 +82,15 @@ M0 alapvető technikai kérdései tisztázva.
 - [ ] Manuális ticketfelvétel a Dashboardról; külső forrásintegráció még nem feltétel.
 - [ ] Kézzel indítható /coordinator és /worker skill külön terminálból.
 - [ ] Coordinator minimális feladata: a manuális ticketek áttekintése és READY állapotba rendezése.
-- [ ] Worker: egy READY ticket felvétele, feldolgozása a projektben, eredmény és státusz visszaírása.
+- [ ] Mehet jelölés a ticketen (alapból kikapcsolva, csak ember kapcsolhatja a Dashboardon); a Worker csak bepipált ticketet vehet fel.
+- [ ] Worker: egy READY és bepipált ticket felvétele, feldolgozása a projektben, eredmény és státusz visszaírása.
 - [ ] Projekt szintű egyetlen Worker és egyetlen aktív ticket biztosítása.
 - [ ] Alapvető hiba- és megszakításkezelés: ticket állapotának megőrzése, újraindítás után folytatási kísérlet.
-- [ ] Dashboard a meglévő feladatlap-dashboard alapján: Kanban, ticket részletező, új ticket, Worker/Coordinator állapot és Leállít/Engedélyez kapcsoló, élő frissítés SSE-vel.
+- [ ] Dashboard a meglévő feladatlap-dashboard alapján: Kanban, Mehet checkbox a kártyán, ticket részletező, új ticket, Worker/Coordinator állapot és Leállít/Engedélyez kapcsoló, élő frissítés SSE-vel.
 
 **Elvárt eredmény:** Egy minimális, de ténylegesen használható AgentHub, amelyben manuálisan létrehozott feladatot a Worker elvégez, az eredmény pedig megjelenik a Dashboardon.
 
-**Elfogadási feltétel:** Friss indítás után a felhasználó el tudja indítani a rendszert; létrehoz egy ticketet; elindítja a Claude CLI-t és a Workert; a Worker elvégzi a feladatot; a ticket és az eredmény visszakerül az adatbázisba és látszik a Dashboardon. Nincs párhuzamos feldolgozás.
+**Elfogadási feltétel:** Friss indítás után a felhasználó el tudja indítani a rendszert; létrehoz egy ticketet és bepipálja a Mehet jelölést; elindítja a Claude CLI-t és a Workert; bepipálatlan ticketet a Worker nem vesz fel; a Worker elvégzi a feladatot; a ticket és az eredmény visszakerül az adatbázisba és látszik a Dashboardon. Nincs párhuzamos feldolgozás.
 
 ## M2 – Többprojekt és izoláció
 

@@ -144,7 +144,7 @@ A Coordinator és a Worker skill a várakozást egyetlen blokkoló paranccsal v�
 
 A `coordinator wait` a beállított ütemben lekérdezi a forrásokat, és szabályalapon elvégzi a normalizálást, az external ID / thread ID szerinti deduplikációt, a meglévő ticket frissítését és az egyértelmű projektbesorolást. Csak azokkal az eseményekkel tér vissza, amelyekhez modell kell (pl. bizonytalan besorolás, típus/prioritás javaslat, szemantikus egyezés gyanúja).
 
-A `worker wait` az API-n long-polllal figyeli a saját projekt queue-ját; ha READY ticket van, tranzakciósan claimeli, és a ticket tömör összefoglalójával tér vissza. A részletek igény szerint, külön paranccsal kérhetők le (`agenthub ticket show`).
+A `worker wait` az API-n long-polllal figyeli a saját projekt queue-ját; ha van READY és indításra jelölt (Mehet) ticket, tranzakciósan claimeli, és a ticket tömör összefoglalójával tér vissza. A részletek igény szerint, külön paranccsal kérhetők le (`agenthub ticket show`).
 
 Üres visszatérés esetén a skill azonnal újrahívja a parancsot, egyetlen rövid sorral. Elsődleges mód: háttérben futó parancs, amelynek befejeződése ébreszti a sessiont, így tétlen állapotban nincs modellhívás. Tartalék mód: előtérben blokkoló parancs a Claude Code parancsidőkorlátja alatti maximális várakozással (pl. 10 perc). A ténylegesen támogatott módot az M0 validálja.
 
@@ -160,7 +160,7 @@ Induláskor ellenőrzi az AgentHub API elérhetőségét, a projektazonosságot 
 
 Feloldja a korábban félbehagyott ticketet, ha van ilyen, az újraindítási szabály alapján.
 
-Ha nincs folytatandó feladat, `agenthub worker wait` paranccsal vár READY ticketre a saját projekt queue-jában.
+Ha nincs folytatandó feladat, `agenthub worker wait` paranccsal vár READY és indításra jelölt (Mehet) ticketre a saját projekt queue-jában (lásd 8.2).
 
 A ticketet a `worker wait` tranzakciósan claimeli; a lease-t és a heartbeatet az `agenthub` CLI tartja fenn, nem a modell.
 
@@ -219,7 +219,7 @@ Minden státuszváltozás TicketEvent rekordot hoz létre. A ticketnek kötelez�
 | NEW | READY | Coordinator, ember | Projekt ismert, a ticket végrehajtható |
 | NEW | NEEDS_TRIAGE | Coordinator | Projekt vagy értelmezés bizonytalan |
 | NEEDS_TRIAGE | READY | ember | ProjectId megadása kötelező |
-| READY | IN_PROGRESS | Worker | Tranzakciós claim, csak a saját projekt Workere |
+| READY | IN_PROGRESS | Worker | Tranzakciós claim, csak a saját projekt Workere, és csak ha a ticket Mehet jelölése be van kapcsolva (8.2) |
 | IN_PROGRESS | IN_PROGRESS | Worker | Lejárt lease visszanyerése ugyanazon projekt Workere által (eseményként naplózva) |
 | IN_PROGRESS | WAITING_FOR_INPUT | Worker | Kérdés létrehozásával együtt |
 | IN_PROGRESS | PENDING_APPROVAL | Worker | PendingAction létrehozásával együtt |
@@ -236,9 +236,17 @@ Végállapot: COMPLETED, CANCELLED. Ticketet a Worker nem zárhat le COMPLETED-r
 
 ### 8.1 Ticket mezők
 
-Id, ProjectId, Title, Description, Type, Priority, Status, SourceId, ExternalId, SourceUrl, CreatedAt, UpdatedAt, DueAt (opcionális), AssignedWorkerId, CurrentLeaseId, RetryCount, LastError, ResultSummary, ResultPayload (opcionális), ClaudeSessionId (opcionális).
+Id, ProjectId, Title, Description, Type, Priority, Status, StartApproved (Mehet, alapértelmezés: false), SourceId, ExternalId, SourceUrl, CreatedAt, UpdatedAt, DueAt (opcionális), AssignedWorkerId, CurrentLeaseId, RetryCount, LastError, ResultSummary, ResultPayload (opcionális), ClaudeSessionId (opcionális).
 
-### 8.2 Ticket események
+### 8.2 Indítási jelölés (Mehet)
+
+A ticket alapértelmezésben nem indul el. Minden ticketen van egy Mehet jelölés (StartApproved), amely létrehozáskor kikapcsolt, akár a Coordinator, akár ember hozta létre a ticketet. A Worker csak olyan ticketet claimelhet, amely READY állapotú és a Mehet jelölése be van kapcsolva; jelölés nélküli ticketet nem vesz fel, és nem is kezd rajta előkészítő munkát.
+
+A jelölést kizárólag ember kapcsolhatja a Dashboardon (a kártyán lévő checkboxszal vagy a ticket részletezőjében). A backend szerveroldalon ellenőrzi: agentkulccsal a jelölés nem módosítható. Minden be- és kikapcsolás TicketEventként naplózódik.
+
+A jelölés kikapcsolása a már IN_PROGRESS állapotú ticketet nem állítja le; csak a még fel nem vett ticket indítását akadályozza meg. A jelölés megmarad, ha a ticket később visszakerül READY állapotba (pl. válasz, jóváhagyás vagy REVIEW-ból visszaküldés után), így a félbehagyott munka külön újrajelölés nélkül folytatódik.
+
+### 8.3 Ticket események
 
 TicketEvent mezők: Id, TicketId, EventType, OldStatus, NewStatus, ActorType, ActorId, Payload, CreatedAt. Az eseménynapló append-only jellegű; utólagos módosítás helyett korrekciós eseményt kell rögzíteni.
 
@@ -353,7 +361,7 @@ A referencia-dashboardból átvett elemek:
 - Kártyán prioritásállítás, forráslink, relatív időbélyeg; kattintásra részletező párbeszédablak a kérdésekkel és a válaszmezővel.
 - Új ticket felvétele párbeszédablakban.
 - Worker és Coordinator Leállít/Engedélyez kapcsoló: ez nem process-vezérlés, hanem jelzés, amelyet a skill a következő ciklus elején figyel (a Worker a futó ticketet még befejezi).
-- "Csak a kijelöltekkel" mód: a Worker csak az ember által megjelölt READY ticketeket veszi fel.
+- Mehet checkbox minden indítható ticket kártyáján (8.2): a Worker csak a bepipált ticketeket veszi fel. Alapértelmezésben nincs bepipálva. Az Indítható oszlop fejléce mutatja, hány ticket van bepipálva.
 - Élő frissítés SSE-vel, kapcsolatvesztés jelzésével.
 
 Felső státuszsáv: Coordinator/Worker állapot, aktív feladat, ticket darabszámok, blocked/approval figyelmeztetések.
@@ -523,6 +531,8 @@ A Coordinator új forráseseményből ticketet készít, deduplikál, meglévőt
 
 A Worker kizárólag a saját projekt ticketjeit dolgozza fel.
 
+A Worker nem vesz fel olyan ticketet, amelyen a Mehet jelölés nincs bekapcsolva; a jelölést agent nem tudja bekapcsolni.
+
 A Worker kérdést tehet fel, a Dashboardon adott válasz után folytatja a munkát.
 
 A külső írás PendingActionként jelenik meg, és jóváhagyás nélkül nem hajtható végre.
@@ -585,6 +595,7 @@ Ezek nem blokkolják a specifikációt, de a megfelelő megvalósítási fázisb
 | MVP | ROADMAP M1: egy projekt, kézi ticketek, végigjárható; utána azonnal folytatás |
 | Várakozás és polling | Modellhívás nélkül, `agenthub ... wait` blokkoló paranccsal (5.1) |
 | Projekt nélküli ticket | Csak NEEDS_TRIAGE állapotban (és globális rendszerfeladatnál) |
+| Indítás | Ticket alapból nem indul; a Worker csak az ember által bepipált (Mehet) ticketet veszi fel |
 | Lezárás | Worker REVIEW-ba tesz, COMPLETED csak emberi elfogadással |
 | Külső írás | Jóváhagyás után az író adapter végrehajthatja; kézi végrehajtás is választható |
 | Hitelesítés | Egyfelhasználós Dashboard-kulcs cookie-ban; projekthez kötött agentkulcsok |
