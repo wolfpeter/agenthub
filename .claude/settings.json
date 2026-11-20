@@ -1,0 +1,6 @@
+{
+  "permissions": {
+    "allow": ["Bash(agenthub:*)"],
+    "deny": ["Read(./secrets/**)", "Edit(./secrets/**)", "Read(./backups/**)", "Edit(./backups/**)"]
+  }
+}

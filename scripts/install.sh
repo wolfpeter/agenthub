@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # AgentHub telepítő (SPECIFICATION 3.1). Használat:
 #   curl -fsSL https://raw.githubusercontent.com/wolfpeter/agenthub/main/scripts/install.sh | bash
-# Változók: AGENTHUB_HOME (alap: ~/AgentHub), AGENTHUB_REPO, AGENTHUB_PORT (alap: 8790), AGENTHUB_BIND
+# Változók: AGENTHUB_HOME (alap: ~/AgentHub), AGENTHUB_REPO, AGENTHUB_PORT (alap: 8790), AGENTHUB_BIND,
+#           AGENTHUB_INSTANCE (Compose-projektnév), AGENTHUB_SKIP_SKILLS=1
 set -euo pipefail
 
 AGENTHUB_HOME="${AGENTHUB_HOME:-$HOME/AgentHub}"
@@ -56,13 +57,17 @@ uv tool install --force "$AGENTHUB_HOME" >/dev/null
 export AGENTHUB_HOME
 
 say "Konfiguráció és kulcsok"
-agenthub init --port "$AGENTHUB_PORT" --bind "$AGENTHUB_BIND"
+agenthub init --port "$AGENTHUB_PORT" --bind "$AGENTHUB_BIND" --instance "${AGENTHUB_INSTANCE:-agenthub}"
 
 say "Szolgáltatások indítása (Docker Compose: API + Dashboard + PostgreSQL)"
 agenthub up
 
-say "Claude Code skillek (/coordinator, /worker)"
-agenthub skills install || say "A skilleket nem telepítettem, mert már van ilyen nevű skill. Lásd fent; felülírás mentéssel: agenthub skills install --force"
+if [ "${AGENTHUB_SKIP_SKILLS:-0}" = "1" ]; then
+  say "Skillek telepítése kihagyva (AGENTHUB_SKIP_SKILLS=1); később: agenthub skills install"
+else
+  say "Claude Code skillek (/coordinator, /worker)"
+  agenthub skills install || say "A skilleket nem telepítettem, mert már van ilyen nevű skill. Lásd fent; felülírás mentéssel: agenthub skills install --force"
+fi
 
 if [ "$AGENTHUB_HOME" != "$HOME/AgentHub" ]; then
   say "Nem alapértelmezett hely: tedd a shell-profilodba: export AGENTHUB_HOME=$AGENTHUB_HOME"

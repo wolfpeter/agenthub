@@ -419,6 +419,10 @@ def next_ticket(s, who: Principal, instance_id: str, session_id: str | None = No
             cur.last_error = "megszakadt feldolgozás; a projekt beállítása szerint nem folytatódik automatikusan"
             _move(s, cur, "FAILED", SYSTEM, "interrupted")
             return None, False
+        same = cur.assigned_worker_id == instance_id and cur.lease_expires_at and cur.lease_expires_at > now()
+        if same:  # ugyanaz a Worker kérdez újra: nincs új esemény, csak a lease hosszabbodik
+            cur.lease_expires_at = now() + timedelta(seconds=gc.lease_ttl_s)
+            return cur, True
         old_lease = cur.current_lease_id
         cur.assigned_worker_id, cur.current_lease_id = instance_id, uuid.uuid4().hex
         cur.lease_expires_at = now() + timedelta(seconds=gc.lease_ttl_s)
@@ -551,7 +555,13 @@ def propose_action(s, who: Principal, tid: int | None, target: str, action_type:
         raise Invalid("a payload egy nem üres JSON-objektum")
     t = None
     if tid is not None:
-        t = _own_in_progress(s, who, tid) if who.role == "worker" else get_ticket(s, who, tid)
+        if who.role == "worker":
+            t = get_ticket(s, who, tid, lock=True)
+            # több javaslat is mehet egy körben: az első után a ticket már PENDING_APPROVAL
+            if t.status not in ("IN_PROGRESS", "PENDING_APPROVAL"):
+                raise Invalid(f"a #{tid} ticket nincs feldolgozás alatt (most: {t.status})")
+        else:
+            t = get_ticket(s, who, tid)
     elif who.role == "worker":
         raise Invalid("a Worker csak tickethez kötve javasolhat műveletet")
     if target == "file":

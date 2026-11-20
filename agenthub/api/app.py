@@ -210,10 +210,11 @@ def state(p: Principal = Dash):
                 agents.append(d)
         sources = [ser.row(x, exclude=("config",)) for x in s.scalars(select(Source).order_by(Source.id))]
         events = []
-        for e, title in s.execute(select(TicketEvent, Ticket.title).join(Ticket, Ticket.id == TicketEvent.ticket_id)
-                                  .order_by(TicketEvent.id.desc()).limit(200)):
+        for e, title, pid in s.execute(select(TicketEvent, Ticket.title, Ticket.project_id)
+                                       .join(Ticket, Ticket.id == TicketEvent.ticket_id)
+                                       .order_by(TicketEvent.id.desc()).limit(200)):
             d = ser.row(e)
-            d["title"] = title
+            d["title"], d["project_id"] = title, pid
             events.append(d)
         usage = s.execute(select(func.count(AgentRun.id), func.sum(AgentRun.tokens_in), func.sum(AgentRun.tokens_out),
                                  func.sum(AgentRun.estimated_cost)).where(AgentRun.started_at >= since)).one()

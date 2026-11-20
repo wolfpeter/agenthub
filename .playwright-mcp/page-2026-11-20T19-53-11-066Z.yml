@@ -1,7 +1,0 @@
-- generic [ref=e2]:
-  - generic [ref=e3]:
-    - heading "AgentHub belépés" [level=1] [ref=e4]
-    - generic [ref=e5]: Dashboard-kulcs
-    - textbox "Dashboard-kulcs" [active] [ref=e6]
-    - button "Belépés" [disabled] [ref=e7]
-  - status

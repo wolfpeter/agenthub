@@ -133,6 +133,10 @@ def test_action_requires_human_approval(dash, two_projects):
                                                     "target_reference": "abc", "payload": {"text": "kész"}})
     assert a["status"] == "PENDING_APPROVAL"
     assert dash.get(f"/api/tickets/{t['id']}")["status"] == "PENDING_APPROVAL"
+    a2 = wa.post(f"/api/tickets/{t['id']}/actions", {"target_system": "email", "action_type": "send",
+                                                     "payload": {"to": "x@example.com", "subject": "s", "body": "b"}})
+    dash.post(f"/api/actions/{a2['id']}/decide", {"decision": "reject", "note": "nem kell"})
+    assert dash.get(f"/api/tickets/{t['id']}")["status"] == "PENDING_APPROVAL"  # az első még nyitott
     wa.post(f"/api/actions/{a['id']}/decide", {"decision": "approve"}, ok=403)
     dash.post(f"/api/actions/{a['id']}/decide", {"decision": "approve"})
     # nincs Trello író adapter beállítva: APPROVED marad, kézi végrehajtásra vár

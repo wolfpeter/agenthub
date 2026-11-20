@@ -205,7 +205,7 @@ def cmd_welcome(a):
         print(f"  {u}")
     print(f"\nDashboard-kulcs (első belépéshez; később: agenthub key show):\n  {read_key('dashboard.key')}\n")
     print("Következő lépések:\n  agenthub project add --id <azonosító> --name <név> --dir <projekt könyvtára>")
-    print("  Coordinator:  cd ~/AgentHub && claude   majd  /coordinator")
+    print("  Coordinator:  agenthub coordinator command   (kiírja az indítóparancsot)")
     print("  Worker:       agenthub worker command --project <azonosító>  (kiírja az indítóparancsot)\n")
 
 
@@ -290,9 +290,9 @@ def claude_settings(project: dict, all_projects: list[dict]) -> dict:
             wd = other["working_directory"]
             deny += [f"Read(/{wd}/**)", f"Edit(/{wd}/**)"]
     wc = (project.get("config") or {}).get("worker", {})
-    perms = {"deny": deny, "defaultMode": wc.get("permission_mode", "acceptEdits")}
-    if wc.get("allowed_tools"):
-        perms["allow"] = wc["allowed_tools"]
+    # az agenthub parancsok mindig futhatnak: ezeken át dolgozik a Worker skill
+    perms = {"deny": deny, "allow": ["Bash(agenthub:*)", *wc.get("allowed_tools", [])],
+             "defaultMode": wc.get("permission_mode", "acceptEdits")}
     return {"permissions": perms, "env": {"AGENTHUB_PROJECT": project["id"]}}
 
 
@@ -501,6 +501,11 @@ def _due(src: dict, now: float) -> bool:
 
 
 def cmd_coordinator(a):
+    if a.action == "command":
+        sid = str(uuid.uuid4())
+        print(f"cd {home()} && AGENTHUB_SESSION_ID={sid} claude --session-id {sid} --settings {home() / '.claude' / 'settings.json'}")
+        print("# ...majd a sessionben: /coordinator")
+        return
     if a.action == "start":
         st = load_state("coordinator")
         if a.takeover or not st.get("instance_id"):
@@ -834,6 +839,7 @@ def main(argv=None):
 
     x = sub.add_parser("coordinator", help="Coordinator-eszközök")
     xs = x.add_subparsers(dest="action", required=True)
+    xs.add_parser("command", help="a Coordinator Claude-sessionjének indítóparancsa")
     r = xs.add_parser("start")
     r.add_argument("--takeover", action="store_true")
     r = xs.add_parser("wait")
