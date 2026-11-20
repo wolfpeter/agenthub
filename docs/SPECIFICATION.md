@@ -1,6 +1,6 @@
 # AgentHub
 
-**Műszaki és funkcionális specifikáció · 0.9 · 2026. november 20.**
+**Műszaki és funkcionális specifikáció · 0.10 · 2026. november 20.**
 
 Státusz: követelmény-specifikáció fejlesztési alapként. Ahol a Claude Code aktuális viselkedése vagy egy külső CLI képessége verziófüggő, ott a dokumentum validációs követelményt ír elő, nem feltételez garantált működést.
 
@@ -24,7 +24,9 @@ Biztonságos alapbeállítás: olvasás és előkészítés automatizálható; k
 
 ## 2. Hatókör
 
-### 2.1 MVP része
+### 2.1 Az első teljes kiadás része (M1–M6)
+
+Az MVP a ROADMAP M1 mérföldköve: egy projektre, kézzel felvett ticketekkel végigjárható, ténylegesen használható rendszer. Az alábbi lista a teljes első kiadás hatóköre; az M1 után a további mérföldkövek azonnal folytatódnak.
 
 Coordinator forrásfigyeléssel, normalizálással, deduplikációval, projektbesorolással és ticketkezeléssel.
 
@@ -58,15 +60,17 @@ Jóváhagyás nélküli e-mail-küldés vagy Jira/Trello írás.
 
 Az AgentHub GitHub repositoryból telepíthető. A main branch a gördülő latest csatorna. A telepítő ellenőrzi a környezetet, mentést készít, létrehozza az AgentHub saját könyvtárait és szolgáltatásait, majd inicializálja az adatbázist. A meglévő Claude Code- és projektfájlokat először csak leltározza.
 
-Javasolt telepítési parancs: curl -fsSL https://raw.githubusercontent.com/<ORG>/<REPO>/main/scripts/install.sh | bash
+Javasolt telepítési parancs: curl -fsSL https://raw.githubusercontent.com/wolfpeter/agenthub/main/scripts/install.sh | bash
 
-Fejlesztői telepítés: git clone, uv sync, frontend függőségek telepítése, docker compose up -d, agenthub init.
+Fejlesztői telepítés: git clone https://github.com/wolfpeter/agenthub.git, uv sync, frontend függőségek telepítése, docker compose up -d, agenthub init.
 
 Alapértelmezett könyvtárstruktúra: ~/AgentHub (rendszer), ~/Projects/<project> (projektrepositoryk).
 
 Telepítésenként saját .env/secrets, PostgreSQL-adatbázis, konfiguráció és backup.
 
 Frissítés előtt DB- és konfigurációmentés; migráció; health check; hiba esetén visszaállítási útmutató.
+
+A telepítő a végén egyszer kiírja a Dashboard-hozzáférési kulcsot és a Dashboard címét (lásd 18.1). A kulcs később `agenthub key rotate` paranccsal cserélhető.
 
 ### 3.2 Folyamatok
 
@@ -87,7 +91,7 @@ Példa: cd ~/AgentHub && claude, majd /coordinator. Worker esetén cd <project-w
 | --- | --- |
 | Backend API | Python 3.13+, FastAPI, Pydantic, SQLAlchemy 2, Alembic, httpx, asyncio |
 | Adattár | PostgreSQL; tranzakciós ticket-claim és lease/heartbeat |
-| Frontend | React + TypeScript, Tailwind CSS, Motion; REST + WebSocket |
+| Frontend | React + TypeScript, Tailwind CSS, Motion; REST + Server-Sent Events (SSE) |
 | Python csomagkezelés | uv; pyproject.toml és uv.lock |
 | Futtatás | Docker Compose az API, Dashboard statikus kiszolgálása és DB számára |
 | Agent-interakció | Claude Code CLI interaktív terminálból, AgentHub által biztosított skill-ekkel |
@@ -112,7 +116,7 @@ Knowledge service: projektmemória-javaslatok, jóváhagyás és szinkronizálá
 
 ## 5. Coordinator működése
 
-A Coordinator konfigurálható ciklusban (javasolt alapérték: 5–15 perc) ellenőrzi az aktív forrásokat. A forrásokhoz tartozó hitelesítés lehetőleg a VM-en már konfigurált CLI-ket és meglévő bejelentkezési állapotot használja; az AgentHub nem építi újra a hitelesítési rendszereket.
+A Coordinator konfigurálható ciklusban (javasolt alapérték: 5–15 perc) ellenőrzi az aktív forrásokat; a ciklus és a várakozás tokentakarékos módját az 5.1 írja le. A forrásokhoz tartozó hitelesítés lehetőleg a VM-en már konfigurált CLI-ket és meglévő bejelentkezési állapotot használja; az AgentHub nem építi újra a hitelesítési rendszereket.
 
 Betölti az aktív források és projekt-hozzárendelési szabályok konfigurációját.
 
@@ -132,17 +136,33 @@ Rövid operatív összefoglalót rögzít, majd lezárja a ciklust.
 
 A szabályalapú feldolgozás előnyt élvez az AI-hívással szemben. Egyszerű, egyértelmű eseményeknél ne történjen szükségtelen modellhívás.
 
+### 5.1 Ciklus és várakozás modellhívás nélkül
+
+Alapelv: várakozás, polling és determinisztikus feldolgozás nem fogyaszthat tokent. A modell csak akkor kap munkát, ha döntés vagy fejlesztés kell.
+
+A Coordinator és a Worker skill a várakozást egyetlen blokkoló paranccsal végzi: `agenthub coordinator wait`, illetve `agenthub worker wait`. Ez az `agenthub` CLI a VM-en, a session termináljában fut, így a meglévő CLI-bejelentkezéseket használja, de modellt nem hív.
+
+A `coordinator wait` a beállított ütemben lekérdezi a forrásokat, és szabályalapon elvégzi a normalizálást, az external ID / thread ID szerinti deduplikációt, a meglévő ticket frissítését és az egyértelmű projektbesorolást. Csak azokkal az eseményekkel tér vissza, amelyekhez modell kell (pl. bizonytalan besorolás, típus/prioritás javaslat, szemantikus egyezés gyanúja).
+
+A `worker wait` az API-n long-polllal figyeli a saját projekt queue-ját; ha READY ticket van, tranzakciósan claimeli, és a ticket tömör összefoglalójával tér vissza. A részletek igény szerint, külön paranccsal kérhetők le (`agenthub ticket show`).
+
+Üres visszatérés esetén a skill azonnal újrahívja a parancsot, egyetlen rövid sorral. Elsődleges mód: háttérben futó parancs, amelynek befejeződése ébreszti a sessiont, így tétlen állapotban nincs modellhívás. Tartalék mód: előtérben blokkoló parancs a Claude Code parancsidőkorlátja alatti maximális várakozással (pl. 10 perc). A ténylegesen támogatott módot az M0 validálja.
+
+A Worker minden ticketet friss kontextusban dolgoz fel (alügynök vagy a Claude Code által dokumentált más mechanizmus), hogy a hosszú ideig futó fő session kontextusa ne nőjön ticketről ticketre.
+
+A Coordinator alapértelmezésben gyors, olcsó modellt használ; a Worker modellje a ticket típusától függ (lásd 14).
+
 ## 6. Worker működése
 
-Minden projekthez legfeljebb egy regisztrált Worker-példány tartozik. Egy Worker csak a saját ProjectId-hez tartozó queue-ból vehet fel ticketet. Alapértelmezett polling: 60 másodperc, konfigurálható.
+Minden projekthez legfeljebb egy regisztrált Worker-példány tartozik. Egy Worker csak a saját ProjectId-hez tartozó queue-ból vehet fel ticketet. A queue figyelése az 5.1 szerinti `agenthub worker wait` long-pollal történik, modellhívás nélkül.
 
 Induláskor ellenőrzi az AgentHub API elérhetőségét, a projektazonosságot és a konfigurációt.
 
 Feloldja a korábban félbehagyott ticketet, ha van ilyen, az újraindítási szabály alapján.
 
-Ha nincs folytatandó feladat, READY ticketet keres a saját projekt queue-jában.
+Ha nincs folytatandó feladat, `agenthub worker wait` paranccsal vár READY ticketre a saját projekt queue-jában.
 
-Tranzakciósan claimeli a ticketet, lease-t és heartbeatet indít.
+A ticketet a `worker wait` tranzakciósan claimeli; a lease-t és a heartbeatet az `agenthub` CLI tartja fenn, nem a modell.
 
 A ticket és projekt kontextusával dolgozik a Claude Code sessionben, a projekt meglévő skilleit és utasításait figyelembe véve.
 
@@ -189,7 +209,30 @@ Validálandó: a Claude Code aktuális verziójának session-azonosítási és r
 | CANCELLED | Megszakított ticket |
 | NEEDS_TRIAGE | Projekt vagy értelmezés emberi besorolást igényel |
 
-Minden státuszváltozás TicketEvent rekordot hoz létre. A ticketnek kötelező ProjectId-val rendelkeznie, kivéve a kifejezetten globális rendszerfeladatokat. A státuszátmeneteket szerveroldali állapotgép validálja.
+Minden státuszváltozás TicketEvent rekordot hoz létre. A ticketnek kötelező ProjectId-val rendelkeznie, két kivétellel: a NEEDS_TRIAGE állapotú ticket (a projekt még nem ismert) és a kifejezetten globális rendszerfeladat. NEEDS_TRIAGE állapotból csak ProjectId megadásával lehet továbblépni. A státuszátmeneteket szerveroldali állapotgép validálja; a táblában nem szereplő átmenet tilos.
+
+### 8.0 Megengedett státuszátmenetek
+
+| Honnan | Hová | Ki | Feltétel / megjegyzés |
+| --- | --- | --- | --- |
+| – | NEW | Coordinator, ember | Ticket létrehozása |
+| NEW | READY | Coordinator, ember | Projekt ismert, a ticket végrehajtható |
+| NEW | NEEDS_TRIAGE | Coordinator | Projekt vagy értelmezés bizonytalan |
+| NEEDS_TRIAGE | READY | ember | ProjectId megadása kötelező |
+| READY | IN_PROGRESS | Worker | Tranzakciós claim, csak a saját projekt Workere |
+| IN_PROGRESS | IN_PROGRESS | Worker | Lejárt lease visszanyerése ugyanazon projekt Workere által (eseményként naplózva) |
+| IN_PROGRESS | WAITING_FOR_INPUT | Worker | Kérdés létrehozásával együtt |
+| IN_PROGRESS | PENDING_APPROVAL | Worker | PendingAction létrehozásával együtt |
+| IN_PROGRESS | REVIEW | Worker | Munka kész, eredmény rögzítve |
+| IN_PROGRESS | FAILED | Worker, rendszer | Hiba; LastError kitöltve |
+| WAITING_FOR_INPUT | READY | rendszer | Minden nyitott kérdésre érkezett válasz |
+| PENDING_APPROVAL | READY | rendszer | A PendingAction lezárult (végrehajtva, kézzel megerősítve vagy elutasítva); a Worker folytatja |
+| REVIEW | COMPLETED | ember | Eredmény elfogadva |
+| REVIEW | READY | ember | Visszaküldés megjegyzéssel |
+| FAILED | READY | ember, rendszer | Kézi újrapróbálás, vagy automatikus retry a projekt retry-korlátjáig |
+| bármely nem végállapot | CANCELLED | ember | Indoklással; aktív lease felszabadul |
+
+Végállapot: COMPLETED, CANCELLED. Ticketet a Worker nem zárhat le COMPLETED-re; az emberi elfogadás kötelező.
 
 ### 8.1 Ticket mezők
 
@@ -217,9 +260,11 @@ Alapelv: Read → automatikus; Prepare → automatikus; Approve → emberi; Exec
 
 | Művelet | Agent jogosultsága | Emberi lépés |
 | --- | --- | --- |
-| E-mail | Címzett, tárgy, törzs előkészítése | Kimásolás, ellenőrzés, kézi küldés; Dashboardon MANUALLY_CONFIRMED rögzítése |
-| Jira | Mező-, státusz- vagy kommentjavaslat | Jóváhagyás; alapértelmezésben kézi végrehajtás |
-| Trello | Kártyaleírás-, komment- vagy listamódosítási javaslat | Jóváhagyás; alapértelmezésben kézi végrehajtás |
+| E-mail | Címzett, tárgy, törzs előkészítése | Jóváhagyás; utána az adapter elküldi, vagy az ember kézzel küldi és MANUALLY_CONFIRMED-et rögzít |
+| Jira | Mező-, státusz- vagy kommentjavaslat | Jóváhagyás; utána az adapter végrehajtja, vagy kézi végrehajtás és MANUALLY_CONFIRMED |
+| Trello | Kártyaleírás-, komment- vagy listamódosítási javaslat | Jóváhagyás; utána az adapter végrehajtja, vagy kézi végrehajtás és MANUALLY_CONFIRMED |
+
+Jóváhagyás után a végrehajtást az író adapter végzi (APPROVED → EXECUTED vagy FAILED), ha a célrendszerhez van konfigurált író adapter. Ha nincs, vagy az ember a kézi végrehajtást választja, a művelet MANUALLY_CONFIRMED-del zárul. Az író adapter csak APPROVED állapotú PendingActiont hajthat végre, pontosan a jóváhagyott payloaddal; a jóváhagyás után módosított payload új jóváhagyást igényel.
 
 PendingAction mezők: Id, TicketId, ProjectId, ActionType, TargetSystem, TargetReference, ProposedPayload, Status, CreatedBy, CreatedAt, ApprovedAt, ExecutedAt, ExecutionResult. Státuszok: DRAFT, PENDING_APPROVAL, APPROVED, REJECTED, EXECUTED, MANUALLY_CONFIRMED, FAILED, CANCELLED.
 
@@ -261,7 +306,7 @@ Memória beállításai, forrás-hozzárendelések és költségkeretek.
 
 Coordinator poll ciklus, források, adapterek, projektbesorolási szabályok.
 
-API és Dashboard hálózati beállításai, WebSocket, naplózási szint.
+API és Dashboard hálózati beállításai, SSE, naplózási szint.
 
 Modellstratégia alapértékei, költségkorlátok, retention és backup.
 
@@ -299,7 +344,17 @@ A skill-ek konzolkimenete legyen takarékos: indulás, ellenőrzött források, 
 
 ## 15. Dashboard UX
 
-Sötét, grafitszürke, kompakt, magas információsűrűségű operatív felület. A korábban bemutatott Kanban UI a vizuális irányadó referencia; nem szükséges pixelpontos másolat.
+Kompakt, magas információsűrűségű operatív felület, a rendszer világos/sötét beállítását követve. A vizuális és funkcionális kiindulópont a fejlesztő VM-en jelenleg futó feladatlap-dashboard; az AgentHub Dashboard erre épül, React-re átírva és projektfüggetlenné téve (konkrét projekt-, board- vagy felhőköltség-elemek nélkül). Nem szükséges pixelpontos másolat.
+
+A referencia-dashboardból átvett elemek:
+
+- Felső dobozsor: keret (token-/használati limit), Worker-állapot, Coordinator-állapot, utolsó forrásellenőrzés.
+- Kanban oszlopok: Folyamatban, Indítható, Rád vár (kérdés vagy jóváhagyás), Blokkolt, Ellenőrzésre vár; a Kész (24 óra) és az Események oszlop összecsukható.
+- Kártyán prioritásállítás, forráslink, relatív időbélyeg; kattintásra részletező párbeszédablak a kérdésekkel és a válaszmezővel.
+- Új ticket felvétele párbeszédablakban.
+- Worker és Coordinator Leállít/Engedélyez kapcsoló: ez nem process-vezérlés, hanem jelzés, amelyet a skill a következő ciklus elején figyel (a Worker a futó ticketet még befejezi).
+- "Csak a kijelöltekkel" mód: a Worker csak az ember által megjelölt READY ticketeket veszi fel.
+- Élő frissítés SSE-vel, kapcsolatvesztés jelzésével.
 
 Felső státuszsáv: Coordinator/Worker állapot, aktív feladat, ticket darabszámok, blocked/approval figyelmeztetések.
 
@@ -323,7 +378,7 @@ A Dashboard LAN-ról és Tailscale-en keresztül is elérhető legyen. Alapérte
 
 ## 16. API és valós idejű frissítés
 
-REST API a CRUD és parancsjellegű műveletekhez; WebSocket az élő ticket-, agent- és dashboard-eseményekhez. Minden végpont szerveroldali projekt- és jogosultságellenőrzést végez.
+REST API a CRUD és parancsjellegű műveletekhez; Server-Sent Events (SSE) az élő ticket-, agent- és dashboard-eseményekhez (a Dashboard írásai REST-en mennek, ezért egyirányú csatorna elég). Minden végpont szerveroldali projekt- és jogosultságellenőrzést végez.
 
 Projects: lista, részletek, konfiguráció, állapot.
 
@@ -372,17 +427,25 @@ Az API minden projektazonosítót ellenőriz; a kliens által küldött ProjectI
 
 Worker working directory és engedélyezett repository útvonalak explicit allowlistből származzanak.
 
+A Worker fájlrendszer-izolációját a Claude Code permission-szabályai adják: az AgentHub projektenként olyan beállítást generál, amely a projekt working directoryján kívüli olvasást és írást, valamint az AgentHub secrets-könyvtárának olvasását tiltja. Ez szabályszintű védelem, nem OS-szintű sandbox; a backend-oldali védelem (projekthez kötött kulcs, ProjectId-ellenőrzés) ettől függetlenül kötelező.
+
 AgentHub titkok ne kerüljenek Gitbe, ticketbe, logba vagy projektmemóriába.
 
 CLI adapter allowlist, argumentumvalidálás, timeout, kimenetkorlát, audit és read/write szétválasztás.
 
 Jóváhagyás állapotát kizárólag backend módosíthatja; agent nem írhatja át.
 
-Dashboard hitelesítése és CSRF/CORS/Origin szabályai szükségesek; Tailscale/LAN elérés nem helyettesíti az alkalmazásszintű jogosultságot.
+Dashboard hitelesítése és CSRF/CORS/Origin szabályai szükségesek; Tailscale/LAN elérés nem helyettesíti az alkalmazásszintű jogosultságot (lásd 18.1).
 
 Backup titkosítása és hozzáférés-korlátozása.
 
 Prompt injection elleni védelem: külső e-mail, issue, komment és dokumentum nem tekinthető megbízható utasításnak; adatként kell kezelni.
+
+### 18.1 Hitelesítés
+
+Egyfelhasználós modell: nincsenek felhasználói fiókok. A telepítő véletlen Dashboard-kulcsot generál, és a telepítés végén egyszer kiírja a hostra. A Dashboard első megnyitáskor bekéri; helyes kulcs után a szerver HttpOnly, SameSite=Strict (HTTPS esetén Secure) cookie-t állít be, amelyben a böngésző tárolja a hozzáférést. Az írási kérések Origin-ellenőrzésen is átmennek. A kulcs `agenthub key rotate` paranccsal cserélhető; ekkor minden korábbi cookie érvénytelen.
+
+Az agentek külön kulcsot kapnak: a Coordinator egy Coordinator-kulcsot, minden projekt Workere a projekt regisztrálásakor generált, projekthez kötött Worker-kulcsot. A backend a ProjectId-t a kulcsból vezeti le, nem a kérésből. A kulcsokat az `agenthub` CLI olvassa az AgentHub secrets-könyvtárából; nem kerülnek projektrepositoryba, ticketbe, logba vagy promptba.
 
 ## 19. Naplózás, költség és monitorozás
 
@@ -430,9 +493,9 @@ A gördülő main/latest csatorna figyelmeztetést és visszaállítási lehető
 
 ## 22. Tesztelési követelmények
 
-Unit tesztek: állapotgép, deduplikáció, projekt-hozzárendelés, konfigurációvalidálás, költségszámítás.
+Unit tesztek: állapotgép (minden megengedett és tiltott átmenet a 8.0 tábla szerint), deduplikáció, projekt-hozzárendelés, konfigurációvalidálás, költségszámítás.
 
-Integrációs tesztek: PostgreSQL tranzakciók, ticket claim/lease, heartbeat, API és WebSocket.
+Integrációs tesztek: PostgreSQL tranzakciók, ticket claim/lease, heartbeat, API és SSE.
 
 Adapter contract tesztek: JSON parsing, hibás kimenet, timeout, exit code, argumentumkezelés.
 
@@ -478,7 +541,7 @@ Frissítés előtt mentés készül; sikertelen migráció vagy health check ese
 
 | Fázis | Tartalom |
 | --- | --- |
-| 0 – Technikai validáció | Claude Code skill telepítési/felismerési mód, resume, modellváltás; CLI JSON adapter prototípus; permission modell |
+| 0 – Technikai validáció | Claude Code skill telepítési/felismerési mód, resume, modellváltás; az 5.1 szerinti modellhívás nélküli várakozás; CLI JSON adapter prototípus; permission modell |
 | 1 – Alaprendszer | Repo, Docker Compose, FastAPI, PostgreSQL, Alembic, React shell, projektregiszter, config |
 | 2 – Ticket core | Ticket állapotgép, event log, deduplikáció, lease/heartbeat, API |
 | 3 – Claude skills | /coordinator és /worker skill, kézi indítás, polling, ticket claim, eredményrögzítés |
@@ -495,7 +558,9 @@ Claude Code session resume: pontos parancs/szintaxis, session ID visszakereshet�
 
 Claude Code modellváltás: session közben és új session indításakor milyen hivatalos módon állítható.
 
-AgentHub skill és backend API közötti hitelesítés: rövid élettartamú, projekthez kötött token vagy más helyi mechanizmus.
+Modellhívás nélküli várakozás (5.1): támogatja-e a Claude Code háttérparancs befejeződésére ébredést, mekkora az előtérparancs maximális időkorlátja, és mennyi tokent fogyaszt egy üres ciklus.
+
+Ticketenkénti friss kontextus (5.1): alügynök vagy más dokumentált mechanizmus, és annak költsége.
 
 Projektmemória Markdown fájljainak végleges helye és DB-fájl konfliktuskezelési szabálya.
 
@@ -516,6 +581,13 @@ Ezek nem blokkolják a specifikációt, de a megfelelő megvalósítási fázisb
 | Dashboard/API/DB | Háttérszolgáltatás, Docker Compose |
 | Konfiguráció | Webes + YAML/JSON fájl |
 | Telepítési csatorna | GitHub main/latest |
-| Projektizoláció | VM-en belüli projektek között is szigorú |
+| Projektizoláció | VM-en belüli projektek között is szigorú; fájlszinten Claude Code permission-szabályokkal |
+| MVP | ROADMAP M1: egy projekt, kézi ticketek, végigjárható; utána azonnal folytatás |
+| Várakozás és polling | Modellhívás nélkül, `agenthub ... wait` blokkoló paranccsal (5.1) |
+| Projekt nélküli ticket | Csak NEEDS_TRIAGE állapotban (és globális rendszerfeladatnál) |
+| Lezárás | Worker REVIEW-ba tesz, COMPLETED csak emberi elfogadással |
+| Külső írás | Jóváhagyás után az író adapter végrehajthatja; kézi végrehajtás is választható |
+| Hitelesítés | Egyfelhasználós Dashboard-kulcs cookie-ban; projekthez kötött agentkulcsok |
+| Dashboard | A meglévő feladatlap-dashboardra épül; élő frissítés SSE-vel |
 
 Dokumentum vége. A specifikáció az eddig egyeztetett követelményeket rögzíti; a validálandó Claude Code-részleteket szándékosan nem kezeli garantált képességként.

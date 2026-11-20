@@ -1,8 +1,8 @@
 # AgentHub – Egységes milestone fejlesztési ütemterv
 
-**Fejlesztési roadmap · 1.1 · 2026. november 20.**
+**Fejlesztési roadmap · 1.2 · 2026. november 20.**
 
-Alapelv: az első mérföldkő végére legyen egy valóban használható, végigjárható rendszer. A későbbi mérföldkövek ezt bővítik; nem szükséges mindent az első verzióba beépíteni.
+Alapelv: az első mérföldkő végére legyen egy valóban használható, végigjárható rendszer. Az MVP az M1; utána a fejlesztés azonnal folytatódik. A későbbi mérföldkövek ezt bővítik; nem szükséges mindent az első verzióba beépíteni.
 
 ## Hogyan használjuk ezt a tervet?
 
@@ -17,7 +17,8 @@ A milestone-ok egyetlen közös fejlesztési útvonalat alkotnak. Mindegyik a ko
 - A Claude CLI-t a felhasználó indítja újra; a Worker alapértelmezésben megpróbálja folytatni a félbehagyott ticketet, ez konfigurálható.
 - A projektmemória végső formája hibrid: adatbázis + Markdown fájlok.
 - A konfiguráció weben és YAML/JSON fájlokban is kezelhető legyen; ez fokozatosan épül ki.
-- A külső írások jóváhagyáshoz kötöttek; a projektizoláció és titokvédelem nem halasztható el.
+- A külső írások jóváhagyáshoz kötöttek; jóváhagyás után az író adapter végrehajthatja őket. A projektizoláció és titokvédelem nem halasztható el.
+- Várakozás és polling nem fogyaszt tokent: az `agenthub ... wait` parancs vár, a modell csak valódi munkánál fut (SPECIFICATION 5.1).
 - A GitHub main/latest a telepítési és frissítési csatorna.
 
 Fontos: a Claude Code skill-felismerés, session resume és modellváltás pontos működését a fejlesztés elején, a használt verzióval kell kipróbálni. Nem építünk nem dokumentált CLI-képességre.
@@ -52,10 +53,13 @@ Nincs; kis prototípusokkal indul.
 - [ ] Session ID és dokumentált session-resume folyamat kipróbálása; CLI kézi újraindításával.
 - [ ] Projektkönyvtár és API-hozzáférés korlátozásának prototípusos tesztje.
 - [ ] A használt Claude Code verzió modellválasztási lehetőségeinek feljegyzése.
+- [ ] Modellhívás nélküli várakozás kipróbálása: háttérparancs befejeződésére ébredés, illetve az előtérparancs időkorlátja; egy üres ciklus tokenköltségének mérése.
+- [ ] Ticketenkénti friss kontextus (alügynök) kipróbálása a Workerben.
+- [ ] Claude Code permission-szabály, amely a Workert a projekt working directoryjára korlátozza.
 
 **Elvárt eredmény:** Egy kicsi, eldobható prototípus és rövid technikai döntésnapló.
 
-**Elfogadási feltétel:** A két skill kézzel elindul és API-val kommunikál; a session-folytatás működése vagy korlátja ismert; nincs szükség nem dokumentált CLI-flagre.
+**Elfogadási feltétel:** A két skill kézzel elindul és API-val kommunikál; a session-folytatás működése vagy korlátja ismert; a tétlen várakozás modellhívás nélkül, vagy mért, elhanyagolható költséggel működik; nincs szükség nem dokumentált CLI-flagre.
 
 ## M1 – Első működő AgentHub
 
@@ -72,14 +76,16 @@ M0 alapvető technikai kérdései tisztázva.
 - [ ] FastAPI + PostgreSQL backend és minimális React/TypeScript Dashboard Docker Compose-ban.
 - [ ] Egy projekt regisztrálása repositoryval és working directoryval.
 - [ ] Minimális ticketmodell: cím, leírás, prioritás, státusz, projekt, létrehozási idő és eredmény.
-- [ ] Alap ticket státuszok és eseménytörténet.
+- [ ] Ticket státuszok a SPECIFICATION 8.0 átmenettáblája szerint, szerveroldali állapotgéppel, eseménytörténettel.
+- [ ] Dashboard-kulcs: a telepítés/indítás kiírja, a Dashboard bekéri és cookie-ban tárolja; agentkulcs a Coordinatornak és a projekt Workerének.
+- [ ] `agenthub coordinator wait` és `agenthub worker wait`: várakozás és claim modellhívás nélkül.
 - [ ] Manuális ticketfelvétel a Dashboardról; külső forrásintegráció még nem feltétel.
 - [ ] Kézzel indítható /coordinator és /worker skill külön terminálból.
 - [ ] Coordinator minimális feladata: a manuális ticketek áttekintése és READY állapotba rendezése.
 - [ ] Worker: egy READY ticket felvétele, feldolgozása a projektben, eredmény és státusz visszaírása.
 - [ ] Projekt szintű egyetlen Worker és egyetlen aktív ticket biztosítása.
 - [ ] Alapvető hiba- és megszakításkezelés: ticket állapotának megőrzése, újraindítás után folytatási kísérlet.
-- [ ] Dashboardon ticketlista/Kanban és az aktuális Worker állapota.
+- [ ] Dashboard a meglévő feladatlap-dashboard alapján: Kanban, ticket részletező, új ticket, Worker/Coordinator állapot és Leállít/Engedélyez kapcsoló, élő frissítés SSE-vel.
 
 **Elvárt eredmény:** Egy minimális, de ténylegesen használható AgentHub, amelyben manuálisan létrehozott feladatot a Worker elvégez, az eredmény pedig megjelenik a Dashboardon.
 
@@ -100,13 +106,13 @@ M1 működő end-to-end folyamat.
 - [ ] Több projekt felvétele saját repositoryval és working directoryval.
 - [ ] Projektenként külön Worker-konfiguráció és külön terminál/session.
 - [ ] Projektazonosító kötelező érvényesítése a ticket- és agent API-kban.
-- [ ] Worker csak saját projekt ticketjeit és könyvtárát érheti el.
+- [ ] Worker csak saját projekt ticketjeit (projekthez kötött kulcs) és könyvtárát (Claude Code permission-szabályok) érheti el.
 - [ ] Projektmemória és konfiguráció elkülönítése már az alapstruktúrában.
 - [ ] Negatív tesztek: másik projekt ticketjének, fájljainak és adatainak elérése tiltott.
 
 **Elvárt eredmény:** Többprojekt-telepítés, amelyben minden projekt önálló Workerrel működik.
 
-**Elfogadási feltétel:** Két külön projekt Workerje csak saját projektjében dolgozik; egyik sem tud másik projekt ticketet claimelni vagy repositoryjához hozzáférni.
+**Elfogadási feltétel:** Két külön projekt Workerje csak saját projektjében dolgozik; egyik sem tud másik projekt ticketet claimelni (API szinten kikényszerítve), és a Claude Code permission-szabályai megtagadják a másik projekt repositoryjához való hozzáférést.
 
 ## M3 – Emberi közreműködés és jóváhagyás
 
@@ -125,7 +131,8 @@ M2 projektizolációja és M1 ticketfolyamata.
 - [ ] Dashboardon szabad szöveges válasz és Worker-javaslat elfogadása.
 - [ ] Egyszerű PendingAction lista külső műveleti javaslatokhoz.
 - [ ] Jóváhagyás/elutasítás szerveroldali ellenőrzése.
-- [ ] E-mail, Jira vagy Trello művelet előkészítése, de jóváhagyás nélkül ne történjen külső írás.
+- [ ] E-mail, Jira vagy Trello művelet előkészítése; jóváhagyás nélkül ne történjen külső írás.
+- [ ] Jóváhagyás után az író adapter végrehajtja a jóváhagyott payloadot (APPROVED → EXECUTED/FAILED), ahol van író adapter.
 - [ ] Manuálisan végrehajtott művelet visszaigazolásának rögzítése.
 
 **Elvárt eredmény:** Használható emberi visszacsatolás és egyszerű approval workflow.
