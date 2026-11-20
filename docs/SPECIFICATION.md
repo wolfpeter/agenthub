@@ -439,7 +439,7 @@ Az API minden projektazonosítót ellenőriz; a kliens által küldött ProjectI
 
 Worker working directory és engedélyezett repository útvonalak explicit allowlistből származzanak.
 
-A Worker fájlrendszer-izolációját a Claude Code permission-szabályai adják: az AgentHub projektenként olyan beállítást generál, amely a projekt working directoryján kívüli olvasást és írást, valamint az AgentHub secrets-könyvtárának olvasását tiltja. Ez szabályszintű védelem, nem OS-szintű sandbox; a backend-oldali védelem (projekthez kötött kulcs, ProjectId-ellenőrzés) ettől függetlenül kötelező.
+A Worker fájlrendszer-izolációját a Claude Code permission-szabályai adják: az AgentHub projektenként olyan beállítást generál, amely a projekt working directoryján kívüli olvasást és írást, valamint az AgentHub secrets-könyvtárának olvasását tiltja. Ez szabályszintű védelem, nem OS-szintű sandbox; a backend-oldali védelem (projekthez kötött kulcs, ProjectId-ellenőrzés) ettől függetlenül kötelező. Ugyanezek a szabályok az `agenthub` parancssort is szerephez kötik: a Worker-session csak a `worker`, `ticket` és `memory` parancsokat futtathatja, a Coordinator csak a `coordinator` parancsot; az admin parancsok (kulcs, konfiguráció, mentés) agent-sessionből tiltottak.
 
 AgentHub titkok ne kerüljenek Gitbe, ticketbe, logba vagy projektmemóriába.
 
