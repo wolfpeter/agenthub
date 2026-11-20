@@ -83,7 +83,7 @@ A telepítő a végén egyszer kiírja a Dashboard-hozzáférési kulcsot és a 
 
 A Dashboard monitoroz és konfigurál, de nem indítja és nem állítja le a Claude Code agenteket. Nem használható tmux, screen, systemd vagy más process manager a Claude CLI sessionök automatikus háttérindítására. A felhasználó RDP-n vagy más interaktív terminálon keresztül indítja a megfelelő Claude CLI-t.
 
-Példa: cd ~/AgentHub && claude, majd /coordinator. Worker esetén cd <project-working-directory> && claude, majd /worker.
+Példa: az `agenthub coordinator command` és az `agenthub worker command --project <id>` kiírja a teljes indítóparancsot (`claude --session-id … --settings …`); a felhasználó ezt futtatja, majd a sessionben /coordinator, illetve /worker. A `--settings` fájl tartalmazza az agent engedélyeit és a projektizoláció tiltásait (lásd docs/M0-VALIDATION.md).
 
 ## 4. Architektúra
 
@@ -581,6 +581,8 @@ Projektmemória Markdown fájljainak végleges helye és DB-fájl konfliktuskeze
 Első körben támogatott forrásadapterek pontos listája és a CLI-k JSON képessége.
 
 Ezek nem blokkolják a specifikációt, de a megfelelő megvalósítási fázisban prototípussal és dokumentációellenőrzéssel kell lezárni őket.
+
+Állapot (2026-11-20): a Claude Code-ra vonatkozó kérdések lezárva, a mérések és döntések a docs/M0-VALIDATION.md-ben. Projektmemória: a Markdown-fájlok helye `~/AgentHub/data/projects/<projekt>/memory/<kategória>.md`; a DB a forrás, a fájl generált (ütközés nincs). Első adapterek: általános CLI (JSON), IMAP, Trello, Jira olvasó; e-mail (SMTP), Trello, Jira író.
 
 ## 26. Véglegesített termékdöntések összefoglalója
 

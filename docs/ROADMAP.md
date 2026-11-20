@@ -27,13 +27,13 @@ Fontos: a Claude Code skill-felismerés, session resume és modellváltás ponto
 
 | Milestone | Státusz | Megjegyzés / dátum |
 | --- | --- | --- |
-| M0 – Technikai validáció | Nem kezdődött el | |
-| M1 – Első működő AgentHub | Nem kezdődött el | |
-| M2 – Többprojekt és izoláció | Nem kezdődött el | |
-| M3 – Emberi közreműködés és jóváhagyás | Nem kezdődött el | |
-| M4 – Projektmemória | Nem kezdődött el | |
-| M5 – Konfiguráció és adapterbővítés | Nem kezdődött el | |
-| M6 – Üzemeltetés és kiadható termék | Nem kezdődött el | |
+| M0 – Technikai validáció | Kész | Mérve, lásd docs/M0-VALIDATION.md (2026-11-20) |
+| M1 – Első működő AgentHub | Kész | E2E mérve valódi Claude-sessionnel (2026-11-20) |
+| M2 – Többprojekt és izoláció | Kész | Izoláció API-tesztekkel és Claude permission-méréssel |
+| M3 – Emberi közreműködés és jóváhagyás | Kész | Kérdés/válasz, jóváhagyás, író adapter (mock) |
+| M4 – Projektmemória | Kész | DB + Markdown, Knowledge Review |
+| M5 – Konfiguráció és adapterbővítés | Kész | Élő Trello/Jira/IMAP ellen nem mérve |
+| M6 – Üzemeltetés és kiadható termék | Részben | Telepítés, frissítés, mentés/visszaállítás mérve ezen a VM-en; tiszta VM-en nem |
 
 ## M0 – Technikai validáció
 
@@ -47,15 +47,15 @@ Nincs; kis prototípusokkal indul.
 
 ### Feladatlista
 
-- [ ] Claude Code aktuális skill-formátumának és telepítési helyének ellenőrzése.
-- [ ] Egy minimális /coordinator és /worker skill kézi indítása külön terminálból.
-- [ ] Bizonyítani, hogy a skill képes az AgentHub API-t meghívni és választ feldolgozni.
-- [ ] Session ID és dokumentált session-resume folyamat kipróbálása; CLI kézi újraindításával.
-- [ ] Projektkönyvtár és API-hozzáférés korlátozásának prototípusos tesztje.
-- [ ] A használt Claude Code verzió modellválasztási lehetőségeinek feljegyzése.
-- [ ] Modellhívás nélküli várakozás kipróbálása: háttérparancs befejeződésére ébredés, illetve az előtérparancs időkorlátja; egy üres ciklus tokenköltségének mérése.
-- [ ] Ticketenkénti friss kontextus (alügynök) kipróbálása a Workerben.
-- [ ] Claude Code permission-szabály, amely a Workert a projekt working directoryjára korlátozza.
+- [x] Claude Code aktuális skill-formátumának és telepítési helyének ellenőrzése.
+- [x] Egy minimális /coordinator és /worker skill kézi indítása külön terminálból.
+- [x] Bizonyítani, hogy a skill képes az AgentHub API-t meghívni és választ feldolgozni.
+- [x] Session ID és dokumentált session-resume folyamat kipróbálása; CLI kézi újraindításával.
+- [x] Projektkönyvtár és API-hozzáférés korlátozásának prototípusos tesztje.
+- [x] A használt Claude Code verzió modellválasztási lehetőségeinek feljegyzése.
+- [x] Modellhívás nélküli várakozás kipróbálása: háttérparancs befejeződésére ébredés, illetve az előtérparancs időkorlátja; egy üres ciklus tokenköltségének mérése.
+- [x] Ticketenkénti friss kontextus (alügynök) kipróbálása a Workerben.
+- [x] Claude Code permission-szabály, amely a Workert a projekt working directoryjára korlátozza.
 
 **Elvárt eredmény:** Egy kicsi, eldobható prototípus és rövid technikai döntésnapló.
 
@@ -73,20 +73,20 @@ M0 alapvető technikai kérdései tisztázva.
 
 ### Feladatlista
 
-- [ ] FastAPI + PostgreSQL backend és minimális React/TypeScript Dashboard Docker Compose-ban.
-- [ ] Egy projekt regisztrálása repositoryval és working directoryval.
-- [ ] Minimális ticketmodell: cím, leírás, prioritás, státusz, projekt, létrehozási idő és eredmény.
-- [ ] Ticket státuszok a SPECIFICATION 8.0 átmenettáblája szerint, szerveroldali állapotgéppel, eseménytörténettel.
-- [ ] Dashboard-kulcs: a telepítés/indítás kiírja, a Dashboard bekéri és cookie-ban tárolja; agentkulcs a Coordinatornak és a projekt Workerének.
-- [ ] `agenthub coordinator wait` és `agenthub worker wait`: várakozás és claim modellhívás nélkül.
-- [ ] Manuális ticketfelvétel a Dashboardról; külső forrásintegráció még nem feltétel.
-- [ ] Kézzel indítható /coordinator és /worker skill külön terminálból.
-- [ ] Coordinator minimális feladata: a manuális ticketek áttekintése és READY állapotba rendezése.
-- [ ] Mehet jelölés a ticketen (alapból kikapcsolva; ember kapcsolhatja a Dashboardon, a Coordinator indoklással sürgős, halaszthatatlan hibánál); a Worker csak bepipált ticketet vehet fel, és nem módosíthatja a jelölést.
-- [ ] Worker: egy READY és bepipált ticket felvétele, feldolgozása a projektben, eredmény és státusz visszaírása.
-- [ ] Projekt szintű egyetlen Worker és egyetlen aktív ticket biztosítása.
-- [ ] Alapvető hiba- és megszakításkezelés: ticket állapotának megőrzése, újraindítás után folytatási kísérlet.
-- [ ] Dashboard a meglévő feladatlap-dashboard alapján: Kanban, Mehet checkbox a kártyán, ticket részletező, új ticket, Worker/Coordinator állapot és Leállít/Engedélyez kapcsoló, élő frissítés SSE-vel.
+- [x] FastAPI + PostgreSQL backend és minimális React/TypeScript Dashboard Docker Compose-ban.
+- [x] Egy projekt regisztrálása repositoryval és working directoryval.
+- [x] Minimális ticketmodell: cím, leírás, prioritás, státusz, projekt, létrehozási idő és eredmény.
+- [x] Ticket státuszok a SPECIFICATION 8.0 átmenettáblája szerint, szerveroldali állapotgéppel, eseménytörténettel.
+- [x] Dashboard-kulcs: a telepítés/indítás kiírja, a Dashboard bekéri és cookie-ban tárolja; agentkulcs a Coordinatornak és a projekt Workerének.
+- [x] `agenthub coordinator wait` és `agenthub worker wait`: várakozás és claim modellhívás nélkül.
+- [x] Manuális ticketfelvétel a Dashboardról; külső forrásintegráció még nem feltétel.
+- [x] Kézzel indítható /coordinator és /worker skill külön terminálból.
+- [x] Coordinator minimális feladata: a manuális ticketek áttekintése és READY állapotba rendezése.
+- [x] Mehet jelölés a ticketen (alapból kikapcsolva; ember kapcsolhatja a Dashboardon, a Coordinator indoklással sürgős, halaszthatatlan hibánál); a Worker csak bepipált ticketet vehet fel, és nem módosíthatja a jelölést.
+- [x] Worker: egy READY és bepipált ticket felvétele, feldolgozása a projektben, eredmény és státusz visszaírása.
+- [x] Projekt szintű egyetlen Worker és egyetlen aktív ticket biztosítása.
+- [x] Alapvető hiba- és megszakításkezelés: ticket állapotának megőrzése, újraindítás után folytatási kísérlet.
+- [x] Dashboard a meglévő feladatlap-dashboard alapján: Kanban, Mehet checkbox a kártyán, ticket részletező, új ticket, Worker/Coordinator állapot és Leállít/Engedélyez kapcsoló, élő frissítés SSE-vel.
 
 **Elvárt eredmény:** Egy minimális, de ténylegesen használható AgentHub, amelyben manuálisan létrehozott feladatot a Worker elvégez, az eredmény pedig megjelenik a Dashboardon.
 
@@ -104,12 +104,12 @@ M1 működő end-to-end folyamat.
 
 ### Feladatlista
 
-- [ ] Több projekt felvétele saját repositoryval és working directoryval.
-- [ ] Projektenként külön Worker-konfiguráció és külön terminál/session.
-- [ ] Projektazonosító kötelező érvényesítése a ticket- és agent API-kban.
-- [ ] Worker csak saját projekt ticketjeit (projekthez kötött kulcs) és könyvtárát (Claude Code permission-szabályok) érheti el.
-- [ ] Projektmemória és konfiguráció elkülönítése már az alapstruktúrában.
-- [ ] Negatív tesztek: másik projekt ticketjének, fájljainak és adatainak elérése tiltott.
+- [x] Több projekt felvétele saját repositoryval és working directoryval.
+- [x] Projektenként külön Worker-konfiguráció és külön terminál/session.
+- [x] Projektazonosító kötelező érvényesítése a ticket- és agent API-kban.
+- [x] Worker csak saját projekt ticketjeit (projekthez kötött kulcs) és könyvtárát (Claude Code permission-szabályok) érheti el.
+- [x] Projektmemória és konfiguráció elkülönítése már az alapstruktúrában.
+- [x] Negatív tesztek: másik projekt ticketjének, fájljainak és adatainak elérése tiltott.
 
 **Elvárt eredmény:** Többprojekt-telepítés, amelyben minden projekt önálló Workerrel működik.
 
@@ -127,14 +127,14 @@ M2 projektizolációja és M1 ticketfolyamata.
 
 ### Feladatlista
 
-- [ ] Tickethez kapcsolt kérdés és válasz tárolása.
-- [ ] WAITING_FOR_INPUT állapot és válasz után READY állapotba visszatérés.
-- [ ] Dashboardon szabad szöveges válasz és Worker-javaslat elfogadása.
-- [ ] Egyszerű PendingAction lista külső műveleti javaslatokhoz.
-- [ ] Jóváhagyás/elutasítás szerveroldali ellenőrzése.
-- [ ] E-mail, Jira vagy Trello művelet előkészítése; jóváhagyás nélkül ne történjen külső írás.
-- [ ] Jóváhagyás után az író adapter végrehajtja a jóváhagyott payloadot (APPROVED → EXECUTED/FAILED), ahol van író adapter.
-- [ ] Manuálisan végrehajtott művelet visszaigazolásának rögzítése.
+- [x] Tickethez kapcsolt kérdés és válasz tárolása.
+- [x] WAITING_FOR_INPUT állapot és válasz után READY állapotba visszatérés.
+- [x] Dashboardon szabad szöveges válasz és Worker-javaslat elfogadása.
+- [x] Egyszerű PendingAction lista külső műveleti javaslatokhoz.
+- [x] Jóváhagyás/elutasítás szerveroldali ellenőrzése.
+- [x] E-mail, Jira vagy Trello művelet előkészítése; jóváhagyás nélkül ne történjen külső írás.
+- [x] Jóváhagyás után az író adapter végrehajtja a jóváhagyott payloadot (APPROVED → EXECUTED/FAILED), ahol van író adapter.
+- [x] Manuálisan végrehajtott művelet visszaigazolásának rögzítése.
 
 **Elvárt eredmény:** Használható emberi visszacsatolás és egyszerű approval workflow.
 
@@ -152,13 +152,13 @@ M2 projektizoláció; M3 Dashboardos emberi kontroll előnyös.
 
 ### Feladatlista
 
-- [ ] Projektmemória tárolása PostgreSQL-ben és Markdown-fájlokban.
-- [ ] Projekt meglévő CLAUDE.md, .claude/skills, .claude/commands és dokumentáció leltározása.
-- [ ] Ticketekből származó tudásjavaslatok létrehozása.
-- [ ] Dashboardon Knowledge Review: elfogadás, szerkesztés, elutasítás.
-- [ ] Elfogadott tudás szinkronizálása a projektmemória fájljaival.
-- [ ] Meglévő projektfájl módosítása előtt diff, mentés és emberi jóváhagyás.
-- [ ] Projektmemória hozzáférésének tesztelése projektazonosító alapján.
+- [x] Projektmemória tárolása PostgreSQL-ben és Markdown-fájlokban.
+- [x] Projekt meglévő CLAUDE.md, .claude/skills, .claude/commands és dokumentáció leltározása.
+- [x] Ticketekből származó tudásjavaslatok létrehozása.
+- [x] Dashboardon Knowledge Review: elfogadás, szerkesztés, elutasítás.
+- [x] Elfogadott tudás szinkronizálása a projektmemória fájljaival.
+- [x] Meglévő projektfájl módosítása előtt diff, mentés és emberi jóváhagyás.
+- [x] Projektmemória hozzáférésének tesztelése projektazonosító alapján.
 
 **Elvárt eredmény:** Jóváhagyással bővülő, DB + Markdown alapú projektmemória.
 
@@ -176,13 +176,13 @@ M1 stabil működése; M2 többprojekt; a forrásadaptereknél M3 approval véde
 
 ### Feladatlista
 
-- [ ] YAML/JSON konfigurációs formátumok véglegesítése és validálása.
-- [ ] Dashboardos szerkesztés a legfontosabb projekt- és Worker-beállításokhoz.
-- [ ] Konfiguráció import/export és alap változásnapló.
-- [ ] Első szükséges külső forrásadapter(ek) bevezetése, például e-mail, Trello vagy Jira.
-- [ ] Általános CLI-adapter csak engedélyezett executable-lel, argumentumlistával és JSON-sémával.
-- [ ] Poll intervallum, forrás-hozzárendelés és aktív/inaktív állapot konfigurálása.
-- [ ] Alap modellstratégia és egyszerű futási/tokenstatisztika.
+- [x] YAML/JSON konfigurációs formátumok véglegesítése és validálása.
+- [x] Dashboardos szerkesztés a legfontosabb projekt- és Worker-beállításokhoz.
+- [x] Konfiguráció import/export és alap változásnapló.
+- [x] Első szükséges külső forrásadapter(ek) bevezetése, például e-mail, Trello vagy Jira. (IMAP, Trello, Jira olvasó és író adapter; élő szolgáltatás ellen még nem, csak mockolt HTTP-vel tesztelve.)
+- [x] Általános CLI-adapter csak engedélyezett executable-lel, argumentumlistával és JSON-sémával.
+- [x] Poll intervallum, forrás-hozzárendelés és aktív/inaktív állapot konfigurálása.
+- [x] Alap modellstratégia és egyszerű futási/tokenstatisztika.
 
 **Elvárt eredmény:** Dashboardról és fájlból is kezelhető konfiguráció, bővíthető forrásintegrációkkal.
 
@@ -200,15 +200,15 @@ M1–M5 fő funkciói stabilak.
 
 ### Feladatlista
 
-- [ ] GitHub main/latest telepítési folyamat és egyszerű install script.
-- [ ] Frissítés előtt adatbázis- és konfigurációmentés.
-- [ ] Backup/restore parancsok és dokumentáció.
-- [ ] DB migrációk és frissítés utáni health check.
-- [ ] Titkok maszkolása, Dashboard hozzáférés és hálózati beállítások hardeningje.
-- [ ] Alap logok, agent heartbeat, futási idő és becsült költség megjelenítése.
-- [ ] Teszt: Worker megszakadása, lease lejárat, ticket folytatása és session fallback.
-- [ ] End-to-end teszt: forrás vagy manuális ticket → Coordinator → Worker → eredmény → Dashboard.
-- [ ] Tiszta Ubuntu VM-en telepítési és visszaállítási próba.
+- [x] GitHub main/latest telepítési folyamat és egyszerű install script.
+- [x] Frissítés előtt adatbázis- és konfigurációmentés.
+- [x] Backup/restore parancsok és dokumentáció.
+- [x] DB migrációk és frissítés utáni health check.
+- [x] Titkok maszkolása, Dashboard hozzáférés és hálózati beállítások hardeningje.
+- [x] Alap logok, agent heartbeat, futási idő és becsült költség megjelenítése.
+- [x] Teszt: Worker megszakadása, lease lejárat, ticket folytatása és session fallback.
+- [x] End-to-end teszt: forrás vagy manuális ticket → Coordinator → Worker → eredmény → Dashboard.
+- [ ] Tiszta Ubuntu VM-en telepítési és visszaállítási próba. (A fejlesztő VM-en, külön könyvtárba telepítve mérve; tiszta VM-en még nem.)
 
 **Elvárt eredmény:** Első kiadható, önállóan telepíthető AgentHub GitHub repository.
 
@@ -216,16 +216,16 @@ M1–M5 fő funkciói stabilak.
 
 ## Végső ellenőrzőlista
 
-- [ ] Az első működő mérföldkő valódi ticketet tud feldolgozni az elejétől az eredményig.
-- [ ] A Coordinator és Worker külön, látható terminálból, kézzel indul.
-- [ ] Projektenként egy Worker és egy aktív feldolgozás érvényesül.
-- [ ] A Worker csak a saját projektjéhez fér hozzá.
-- [ ] A félbehagyott ticket alapértelmezésben folytatható, de a viselkedés konfigurálható.
-- [ ] Az emberi kérdések és válaszok tartósan megmaradnak.
-- [ ] Külső írás csak jóváhagyással történhet.
-- [ ] A projektmemória DB + Markdown alapú és projektenként izolált.
-- [ ] A konfiguráció weben és fájlból is kezelhető.
-- [ ] A rendszer GitHubról telepíthető, frissíthető és helyreállítható.
+- [x] Az első működő mérföldkő valódi ticketet tud feldolgozni az elejétől az eredményig.
+- [x] A Coordinator és Worker külön, látható terminálból, kézzel indul.
+- [x] Projektenként egy Worker és egy aktív feldolgozás érvényesül.
+- [x] A Worker csak a saját projektjéhez fér hozzá.
+- [x] A félbehagyott ticket alapértelmezésben folytatható, de a viselkedés konfigurálható.
+- [x] Az emberi kérdések és válaszok tartósan megmaradnak.
+- [x] Külső írás csak jóváhagyással történhet.
+- [x] A projektmemória DB + Markdown alapú és projektenként izolált.
+- [x] A konfiguráció weben és fájlból is kezelhető.
+- [x] A rendszer GitHubról telepíthető, frissíthető és helyreállítható.
 
 ## Fejlesztési munkamódszer Claude Code-dal
 

@@ -18,7 +18,7 @@ def execute(target: str, action_type: str, reference: str | None, payload: dict,
     if fn is None:
         raise WriteError(f"nincs író adapter ehhez: {target}")
     conf = getattr(cfg, target)
-    if not conf:
+    if conf is None:  # {} = beállítva, alapértelmezett titoknevekkel
         raise WriteError(f"a(z) {target} író adapter nincs beállítva; hajtsd végre kézzel és rögzítsd")
     try:
         return fn(action_type, reference, payload, conf, client)

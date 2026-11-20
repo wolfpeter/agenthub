@@ -1,0 +1,78 @@
+# AgentHub
+
+Önállóan telepíthető koordinációs rendszer Claude Code-agenteknek. Projektfüggetlen: egy Ubuntu VM-en egy telepítés, saját adatbázissal, Dashboarddal, egy Coordinatorral és projektenként egy Workerrel.
+
+- **Coordinator:** figyeli a forrásokat (e-mail, Trello, Jira, tetszőleges JSON-t adó CLI), ticketet készít, kiszűri a duplikációt és projekthez sorol. Kódot nem módosít.
+- **Worker:** a saját projektje ticketjeit dolgozza fel, egyszerre egyet. Csak azt veszi fel, amit ember (vagy sürgős hibánál, indoklással, a Coordinator) **Mehet**-re jelölt.
+- **Dashboard:** Kanban-tábla, ticket-részletek, kérdések és válaszok, jóváhagyások, projektmemória, agentállapot, konfiguráció. Élőben frissül.
+- **Biztonság:**
+  - Olvasás és előkészítés automatikus; kifelé (e-mail, Jira, Trello) csak emberi jóváhagyás után történik írás.
+  - A projektek egymástól elszigeteltek.
+  - A titkok nem kerülnek Gitbe.
+
+Részletek: [SPECIFICATION](docs/SPECIFICATION.md) · [ROADMAP](docs/ROADMAP.md) · [M0 döntésnapló](docs/M0-VALIDATION.md)
+
+## Telepítés
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wolfpeter/agenthub/main/scripts/install.sh | bash
+```
+
+A telepítő:
+1. Ellenőrzi és szükség esetén telepíti az előfeltételeket (git, Docker, Compose, uv).
+2. A repót a `~/AgentHub` könyvtárba klónozza, és telepíti az `agenthub` parancsot.
+3. Kulcsokat generál, majd elindítja az API-t, a Dashboardot és a PostgreSQL-t.
+4. Telepíti a `/coordinator` és `/worker` skillt. A meglévő, azonos nevű skilleket nem írja felül.
+5. A végén kiírja a Dashboard címét és belépési kulcsát.
+
+A Claude Code CLI-t (`claude`) külön kell telepíteni.
+
+Változók: `AGENTHUB_HOME`, `AGENTHUB_PORT` (alap 8790), `AGENTHUB_BIND` (alap 0.0.0.0, ami a LAN-t és a Tailscale-t is jelenti; nyilvános internetre ne tedd ki), `AGENTHUB_INSTANCE`, `AGENTHUB_SKIP_SKILLS=1`.
+
+Ha a telepítés már megvan, ugyanez a parancs frissít: mentést készít, lehúzza a `main` ágat, migrál, majd health checket futtat.
+
+## Használat
+
+```bash
+agenthub project add --id webshop --name "Webshop" --dir ~/Projects/webshop
+agenthub coordinator command          # kiírja a Coordinator indítóparancsát
+agenthub worker command --project webshop   # kiírja a Worker indítóparancsát (vagy a folytatást)
+```
+
+Az agenteket mindig kézzel kell elindítani, látható terminálban. Futtasd a kiírt `claude …` parancsot, majd a sessionben írd be: `/coordinator` vagy `/worker`. A várakozás nem fogyaszt tokent: az `agenthub … wait` parancs vár, a modell csak valódi munkánál fut.
+
+A Dashboardon:
+- Felveszed a ticketet, és bepipálod a **Mehet**-et. A Worker csak ezután veszi fel.
+- Válaszolsz a Worker kérdéseire.
+- Jóváhagyod vagy elutasítod a külső műveleteket.
+- Elfogadod az eredményt (REVIEW → COMPLETED).
+
+| Parancs | Mire |
+| --- | --- |
+| `agenthub key show` / `key rotate dashboard` | Dashboard-kulcs megjelenítése, cseréje |
+| `agenthub project add/list/key` | Projektek, Worker-kulcs |
+| `agenthub config export [fájl]` / `config import <fájl>` | Konfiguráció YAML-ben |
+| `agenthub source test <id>` | Forrásadapter kipróbálása (adatot nem küld) |
+| `agenthub backup` / `restore <fájl>` | Titkosított mentés (DB, konfiguráció, memória) és visszaállítás |
+| `agenthub update` | Mentés + frissítés + migráció + health check |
+| `agenthub doctor` | Állapot-ellenőrzés |
+| `agenthub skills install [--force]` | Skillek (felülírás csak mentéssel) |
+
+A forrás- és író adapterek titkai a `~/AgentHub/secrets/sources.env` fájlba kerülnek. A mentéseket a `secrets/backup.key` kulcs titkosítja; ezt a kulcsot külön is őrizd meg.
+
+## Fejlesztés
+
+```bash
+uv sync
+docker run -d --name agenthub-test-pg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=agenthub_test \
+  -p 127.0.0.1:55432:5432 postgres:17-alpine
+uv run pytest
+cd frontend && npm ci && npm run build   # → agenthub/static
+```
+
+Felépítés:
+- `agenthub/`: FastAPI-backend (`api/`), üzleti logika (`services.py`), állapotgép (`states.py`), adatmodell (`models.py`), konfigurációs séma, `cli/` (a host-oldali parancssor), `adapters/` (olvasók), `writers.py` (író adapterek).
+- `migrations/`: Alembic.
+- `frontend/`: React + TypeScript + Tailwind + Motion.
+- `skills/`: a két Claude Code skill.
+- `scripts/install.sh`: a telepítő.
