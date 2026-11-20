@@ -130,6 +130,8 @@ Megkeresi a kapcsolódó meglévő ticketet; ha talál, frissíti és eseményt 
 
 Új igénynél projektet, típust és prioritást javasol. Bizonytalan projekt esetén NEEDS_TRIAGE állapotba teszi.
 
+Indokolt esetben (látszólag sürgős, halaszthatatlan hiba) bekapcsolhatja a ticket Mehet jelölését, kötelező indoklással (lásd 8.2).
+
 Nem fejleszt, nem módosít projektkódot, és nem hajt végre külső írási műveletet.
 
 Rövid operatív összefoglalót rögzít, majd lezárja a ciklust.
@@ -242,7 +244,9 @@ Id, ProjectId, Title, Description, Type, Priority, Status, StartApproved (Mehet,
 
 A ticket alapértelmezésben nem indul el. Minden ticketen van egy Mehet jelölés (StartApproved), amely létrehozáskor kikapcsolt, akár a Coordinator, akár ember hozta létre a ticketet. A Worker csak olyan ticketet claimelhet, amely READY állapotú és a Mehet jelölése be van kapcsolva; jelölés nélküli ticketet nem vesz fel, és nem is kezd rajta előkészítő munkát.
 
-A jelölést kizárólag ember kapcsolhatja a Dashboardon (a kártyán lévő checkboxszal vagy a ticket részletezőjében). A backend szerveroldalon ellenőrzi: agentkulccsal a jelölés nem módosítható. Minden be- és kikapcsolás TicketEventként naplózódik.
+A jelölést ember kapcsolhatja a Dashboardon (a kártyán lévő checkboxszal vagy a ticket részletezőjében). A Coordinator indokolt esetben szintén bekapcsolhatja: ha a ticket látszólag sürgős, halaszthatatlan hibát jelez (pl. éles rendszer leállása, adatvesztés vagy biztonsági kockázat). Ilyenkor az indoklás megadása kötelező; a backend indoklás nélkül elutasítja a kérést. A Dashboard a kártyán megkülönböztetve jelzi a Coordinator által bekapcsolt jelölést, és mutatja az indoklást; az ember bármikor kikapcsolhatja.
+
+A Worker a jelölést nem módosíthatja. A backend a jogosultságot szerveroldalon, a kulcs szerepe alapján ellenőrzi: Dashboard-kulccsal ki- és bekapcsolható, Coordinator-kulccsal csak indoklással bekapcsolható, Worker-kulccsal egyik sem. Minden be- és kikapcsolás TicketEventként naplózódik, a szereplővel és az indoklással együtt.
 
 A jelölés kikapcsolása a már IN_PROGRESS állapotú ticketet nem állítja le; csak a még fel nem vett ticket indítását akadályozza meg. A jelölés megmarad, ha a ticket később visszakerül READY állapotba (pl. válasz, jóváhagyás vagy REVIEW-ból visszaküldés után), így a félbehagyott munka külön újrajelölés nélkül folytatódik.
 
@@ -531,7 +535,7 @@ A Coordinator új forráseseményből ticketet készít, deduplikál, meglévőt
 
 A Worker kizárólag a saját projekt ticketjeit dolgozza fel.
 
-A Worker nem vesz fel olyan ticketet, amelyen a Mehet jelölés nincs bekapcsolva; a jelölést agent nem tudja bekapcsolni.
+A Worker nem vesz fel olyan ticketet, amelyen a Mehet jelölés nincs bekapcsolva; a jelölést a Worker nem tudja bekapcsolni, a Coordinator csak indoklással.
 
 A Worker kérdést tehet fel, a Dashboardon adott válasz után folytatja a munkát.
 
@@ -595,7 +599,7 @@ Ezek nem blokkolják a specifikációt, de a megfelelő megvalósítási fázisb
 | MVP | ROADMAP M1: egy projekt, kézi ticketek, végigjárható; utána azonnal folytatás |
 | Várakozás és polling | Modellhívás nélkül, `agenthub ... wait` blokkoló paranccsal (5.1) |
 | Projekt nélküli ticket | Csak NEEDS_TRIAGE állapotban (és globális rendszerfeladatnál) |
-| Indítás | Ticket alapból nem indul; a Worker csak az ember által bepipált (Mehet) ticketet veszi fel |
+| Indítás | Ticket alapból nem indul; a Worker csak bepipált (Mehet) ticketet vesz fel. Pipálhat az ember, és indoklással a Coordinator sürgős, halaszthatatlan hibánál |
 | Lezárás | Worker REVIEW-ba tesz, COMPLETED csak emberi elfogadással |
 | Külső írás | Jóváhagyás után az író adapter végrehajthatja; kézi végrehajtás is választható |
 | Hitelesítés | Egyfelhasználós Dashboard-kulcs cookie-ban; projekthez kötött agentkulcsok |

@@ -82,7 +82,7 @@ M0 alapvető technikai kérdései tisztázva.
 - [ ] Manuális ticketfelvétel a Dashboardról; külső forrásintegráció még nem feltétel.
 - [ ] Kézzel indítható /coordinator és /worker skill külön terminálból.
 - [ ] Coordinator minimális feladata: a manuális ticketek áttekintése és READY állapotba rendezése.
-- [ ] Mehet jelölés a ticketen (alapból kikapcsolva, csak ember kapcsolhatja a Dashboardon); a Worker csak bepipált ticketet vehet fel.
+- [ ] Mehet jelölés a ticketen (alapból kikapcsolva; ember kapcsolhatja a Dashboardon, a Coordinator indoklással sürgős, halaszthatatlan hibánál); a Worker csak bepipált ticketet vehet fel, és nem módosíthatja a jelölést.
 - [ ] Worker: egy READY és bepipált ticket felvétele, feldolgozása a projektben, eredmény és státusz visszaírása.
 - [ ] Projekt szintű egyetlen Worker és egyetlen aktív ticket biztosítása.
 - [ ] Alapvető hiba- és megszakításkezelés: ticket állapotának megőrzése, újraindítás után folytatási kísérlet.
