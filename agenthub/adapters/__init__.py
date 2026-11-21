@@ -134,12 +134,15 @@ def poll(source: dict, allowlist: list[str]) -> list[dict]:
     sc = source["config"]
     kind = sc["adapter_type"]
     cfg = ADAPTER_CONFIGS[kind].model_validate(sc.get("settings") or {})
-    if kind == "cli":
-        return run_cli(cfg, allowlist)
-    if kind == "imap":
-        return run_imap(cfg)
-    if kind == "trello":
-        return run_trello(cfg)
-    if kind == "jira":
-        return run_jira(cfg)
+    try:
+        if kind == "cli":
+            return run_cli(cfg, allowlist)
+        if kind == "imap":
+            return run_imap(cfg)
+        if kind == "trello":
+            return run_trello(cfg)
+        if kind == "jira":
+            return run_jira(cfg)
+    except httpx.HTTPError as e:  # hálózati hiba: csak ez a forrás hibás, a ciklus megy tovább
+        raise AdapterError(secretstore.mask(f"{kind}: {type(e).__name__}: {e}")) from None
     raise AdapterError(f"ismeretlen adapter: {kind}")

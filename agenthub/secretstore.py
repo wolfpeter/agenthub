@@ -19,16 +19,20 @@ def load() -> dict[str, str]:
     return out
 
 
+_issued: set[str] = set()  # environmentből kiadott titkok, hogy a mask() is ismerje őket
+
+
 def get(name: str) -> str:
     v = load().get(name) or os.environ.get(name)
     if not v:
         raise KeyError(f"hiányzó titok: {name} (add meg a secrets/sources.env fájlban)")
+    _issued.add(v)
     return v
 
 
 def mask(text: str) -> str:
     """Ismert titkok kitakarása szövegből (logok, hibaüzenetek)."""
-    for v in load().values():
+    for v in sorted({*load().values(), *_issued}, key=len, reverse=True):
         if v and len(v) >= 6:
             text = text.replace(v, "***")
     return text

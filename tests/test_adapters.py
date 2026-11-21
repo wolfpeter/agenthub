@@ -82,3 +82,20 @@ def test_writer_timeout_marked_uncertain():
     with pytest.raises(writers.WriteError) as e:
         writers.execute("jira", "comment", "ABC-1", {"text": "x"}, cfg, client(refused))
     assert not e.value.uncertain
+
+
+def test_network_error_becomes_masked_adapter_error(monkeypatch):
+    def down(req):
+        raise httpx.ConnectError(f"nem elérhető: {req.url}")
+    real = httpx.Client
+    monkeypatch.setattr(adapters.httpx, "Client", lambda **k: real(transport=httpx.MockTransport(down)))
+    src = {"config": {"adapter_type": "trello", "settings": {"board_id": "b"}}}
+    with pytest.raises(adapters.AdapterError) as e:
+        adapters.poll(src, [])
+    assert "tttttttttt" not in str(e.value) and "ConnectError" in str(e.value)
+
+
+def test_env_only_secret_is_masked(monkeypatch):
+    monkeypatch.setenv("ONLY_IN_ENV", "envtitok123")
+    assert secretstore.get("ONLY_IN_ENV") == "envtitok123"
+    assert secretstore.mask("hiba: envtitok123") == "hiba: ***"
