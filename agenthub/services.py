@@ -980,25 +980,39 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
 
 
 _WORD = re.compile(r"\w{3,}")
-DUP_THRESHOLD = 0.4
+_STOP = {"nem", "hogy", "sem", "meg", "már", "még", "csak", "van", "vagy", "nincs", "lesz", "kell", "ezt", "azt", "egy",
+         "the", "and", "for", "with", "not", "this", "that", "from"}
+DUP_THRESHOLD = 0.35
 
 
-def _words(t: Ticket) -> set[str]:
-    return set(_WORD.findall(f"{t.title} {(t.description or '')[:500]}".lower()))
+def _stems(text: str) -> set[str]:
+    # az első 6 betű: a magyar ragozott alakok (webshop/webshopban) így egyeznek
+    return {w[:6] for w in _WORD.findall(text.lower()) if w not in _STOP}
+
+
+def _words(t: Ticket) -> tuple[set[str], set[str]]:
+    return _stems(t.title), _stems(f"{t.title} {(t.description or '')[:500]}")
+
+
+def _similarity(a, b) -> float:
+    """A címek Jaccard-egyezése vagy a teljes szöveg átfedése, a nagyobb (hosszú leírás ne hígítsa)."""
+    (ta, fa), (tb, fb) = a, b
+    title = len(ta & tb) / len(ta | tb) if ta | tb else 0
+    full = len(fa & fb) / min(len(fa), len(fb)) if fa and fb else 0
+    return max(title, full)
 
 
 def similar_tickets(s, t: Ticket, limit: int = 3) -> list[dict]:
-    """Nyitott ticketek szóhalmaz-egyezés (Jaccard) alapján, modell és embedding nélkül.
-    shortcut: a legutóbbi 500 nyitott ticketet nézi, szóegyezéssel; ha kevés, pg_trgm vagy embedding kell."""
+    """Nyitott ticketek szóegyezés alapján, modell és embedding nélkül.
+    shortcut: a legutóbbi 500 nyitott ticketet nézi, szótő-egyezéssel; ha kevés, pg_trgm vagy embedding kell."""
     mine = _words(t)
-    if not mine:
+    if not mine[1]:
         return []
     q = (select(Ticket).where(Ticket.id != t.id, Ticket.status.notin_(states.FINAL))
          .order_by(Ticket.updated_at.desc()).limit(500))
     out = []
     for o in s.scalars(q):
-        other = _words(o)
-        score = len(mine & other) / len(mine | other) if other else 0
+        score = _similarity(mine, _words(o))
         if score >= DUP_THRESHOLD:
             out.append({"id": o.id, "title": o.title, "status": o.status, "project_id": o.project_id,
                         "score": round(score, 2)})

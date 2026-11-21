@@ -460,12 +460,17 @@ def test_semantic_duplicate_merged_into_existing(dash, coord, two_projects):
     coord.post(f"/api/tickets/{orig}/merge", {"into": did}, ok=400)
 
 
-def test_similarity_ignores_unrelated_and_closed():
+def test_similarity_scores():
     from types import SimpleNamespace as N
     from agenthub import services as sv
-    a, b = N(title="A webshop kosár gomb nem működik", description=""), N(title="Új számlázási riport exportja", description="")
-    wa, wb = sv._words(a), sv._words(b)
-    assert len(wa & wb) / len(wa | wb) < sv.DUP_THRESHOLD
+    base = N(title="A webshop kosár gomb nem működik mobilon", description="Mobilon a Kosárba gomb megnyomására nem történik semmi.")
+    dup = N(title="Mobilon nem működik a kosár gomb a webshopban", description="Androidon Chrome-ban sem reagál a Kosárba gomb, "
+            "iPhone Safariban ugyanez. A konzolban 'TypeError: cart is undefined' hiba látszik.")  # hosszú leírás, ragozott alakok
+    other = N(title="Nem működik a bejelentkezés", description="Hibás jelszó üzenet jön helyes jelszóra is")
+    unrelated = N(title="Új számlázási riport exportja", description="CSV export kell a havi számlákról")
+    score = lambda o: sv._similarity(sv._words(base), sv._words(o))
+    assert score(dup) >= sv.DUP_THRESHOLD
+    assert score(other) < sv.DUP_THRESHOLD and score(unrelated) == 0
 
 
 def test_budget_agent_stats_cycle_and_ticket_types(dash, coord, two_projects):
