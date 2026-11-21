@@ -311,7 +311,10 @@ def claude_settings(project: dict, all_projects: list[dict]) -> dict:
     wc = (project.get("config") or {}).get("worker", {})
     perms = {"deny": deny, "allow": [*allow, *wc.get("allowed_tools", [])],
              "defaultMode": wc.get("permission_mode", "acceptEdits")}
-    return {"permissions": perms, "env": {"AGENTHUB_ROLE": "worker", "AGENTHUB_PROJECT": project["id"]}}
+    out = {"permissions": perms, "env": {"AGENTHUB_ROLE": "worker", "AGENTHUB_PROJECT": project["id"]}}
+    if wc.get("hooks"):
+        out["hooks"] = wc["hooks"]
+    return out
 
 
 def cmd_worker(a):

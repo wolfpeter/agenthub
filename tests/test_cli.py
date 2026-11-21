@@ -216,3 +216,10 @@ def test_file_write_refuses_symlinks_and_is_atomic(tmp_path, monkeypatch):
     assert (wd / "a.txt").read_text() == "pwned" and saved == ["régi".encode()]
     w("uj/b.txt", None)
     assert (wd / "uj" / "b.txt").read_text() == "pwned"
+
+
+def test_worker_settings_include_project_hooks():
+    hooks = {"PostToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "npm run lint"}]}]}
+    st = cli.claude_settings({"id": "p", "config": {"worker": {"hooks": hooks}}}, [])
+    assert st["hooks"] == hooks
+    assert "hooks" not in cli.claude_settings({"id": "p", "config": {}}, [])

@@ -95,6 +95,8 @@ def save_config(s, who: Principal, scope: str, data: dict, comment: str | None =
     last = _latest(s, scope, scope_id)
     if last and last.config == body:
         return last
+    prev = last.config if last else (SCOPES[scope]().model_dump(mode="json") if scope in ("global", "writers") else None)
+    notice = restart_notice(scope, scope_id, prev, body)
     v = ConfigVersion(scope=scope, scope_id=scope_id, version=(last.version + 1 if last else 1), config=body,
                       comment=comment, created_by=who.actor_id)
     s.add(v)
@@ -111,7 +113,24 @@ def save_config(s, who: Principal, scope: str, data: dict, comment: str | None =
     s.flush()
     audit(s, who, "config.save", scope, scope_id or None, {"version": v.version, "comment": comment})
     changed(what="config")
+    v.restart_notice = notice  # nem DB-mező: a válaszban jelezzük, ha a futó sessiont újra kell indítani
     return v
+
+
+def restart_notice(scope: str, scope_id: str, old: dict | None, new: dict) -> str | None:
+    """A legtöbb beállítást az agent a következő hívásnál átveszi; ezek a session indításakor rögzülnek (SPECIFICATION 12.3)."""
+    if old is None:
+        return None
+    if scope == "project":
+        ow, nw = old.get("worker", {}), new.get("worker", {})
+        if any(ow.get(k) != nw.get(k) for k in ("permission_mode", "allowed_tools", "hooks")) \
+                or old.get("working_directory") != new.get("working_directory"):
+            return (f"A Worker jogosultságai változtak. Indítsd újra a(z) {scope_id} Worker Claude-sessionjét az "
+                    f"`agenthub worker command --project {scope_id}` által kiírt paranccsal. Ha a könyvtár változott, "
+                    "a többi projekt Workerét is.")
+    if scope == "global" and old.get("coordinator_model") != new.get("coordinator_model"):
+        return "A Coordinator modellje változott: az `agenthub coordinator command` paranccsal indítsd újra a sessiont."
+    return None
 
 
 def _check_project_paths(s, cfg: ProjectConfig):

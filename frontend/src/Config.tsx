@@ -21,6 +21,7 @@ export default function Config({ S }: { S: State }) {
   const [text, setText] = useState('')
   const [hist, setHist] = useState<Hist[]>([])
   const [comment, setComment] = useState('')
+  const [notice, setNotice] = useState<string | null>(null)
   const [res, setRes] = useState<{ ok: boolean; msg?: string; diff?: string } | null>(null)
   const [key, setKey] = useState<{ id: string; key: string } | null>(null)
   const sid = multi ? (sel === '+' ? '' : sel) : ''
@@ -46,13 +47,16 @@ export default function Config({ S }: { S: State }) {
     const r = await run(() => post(`/api/config/${scope}`, { data, comment: comment || undefined }), 'Konfiguráció mentve')
     if (!r) return
     setComment('')
+    setNotice(r.restart_required ?? null)
     if (r.worker_key) setKey({ id: r.scope_id, key: r.worker_key })
     if (multi) setSel(r.scope_id)
     load()
   }
   const rollback = async (version: number) => {
     if (!(await confirm(`Visszaállítod a v${version} verziót? Új verzióként mentődik.`))) return
-    if (await run(() => post(`/api/config/${scope}/rollback`, { scope_id: sid, version }), 'Visszaállítva')) load()
+    const r = await run(() => post(`/api/config/${scope}/rollback`, { scope_id: sid, version }), 'Visszaállítva')
+    setNotice(r?.restart_required ?? null)
+    if (r) load()
   }
   const importFile = async (f: File) => {
     if (!(await confirm(`Importálod: ${f.name}? A benne szereplő projektek, források és beállítások új verzióként mentődnek.`))) return
@@ -80,6 +84,7 @@ export default function Config({ S }: { S: State }) {
         <input className="inp !w-64" placeholder="Megjegyzés a mentéshez" value={comment} onChange={e => setComment(e.target.value)} />
         <button className="btn" onClick={validate}>Ellenőrzés</button><button className="btn pri" onClick={save}>Mentés</button>
       </div>
+      {notice && <div className="mt-2 text-warn text-[13px] font-semibold" role="status">Újraindítás szükséges: {notice}</div>}
       {res && (res.ok ? <div className="mt-2"><div className="text-ok text-[13px]">Érvényes konfiguráció. Változás:</div><Diff text={res.diff ?? ''} /></div>
         : <pre className="code mt-2" style={{ color: 'var(--bad)' }} role="alert">{res.msg}</pre>)}
       {hist.length > 0 && (

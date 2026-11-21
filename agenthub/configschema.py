@@ -60,6 +60,7 @@ class WorkerConfig(Strict):
     model: str | None = None
     permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "acceptEdits"
     allowed_tools: list[str] = Field(default_factory=list)
+    hooks: dict = Field(default_factory=dict)  # Claude Code settings `hooks` blokk, változatlanul a Worker settings-fájljába
     instructions: str = ""
 
 

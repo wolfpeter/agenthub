@@ -481,3 +481,15 @@ def test_budget_agent_stats_cycle_and_ticket_types(dash, coord, two_projects):
     assert st["last_cycle"] is None
     coord.post("/api/coordinator/cycle", {"sources_checked": 2, "created": 1, "errors": ["x: hiba"]})
     assert dash.get("/api/state")["last_cycle"]["sources_checked"] == 2
+
+
+def test_config_change_flags_restart_and_hooks(dash):
+    base = {"id": "gamma", "name": "G", "working_directory": "/srv/gamma"}
+    assert dash.post("/api/config/project", {"data": base})["restart_required"] is None  # új projekt
+    r = dash.post("/api/config/project", {"data": {**base, "worker": {"instructions": "x"}}})
+    assert r["restart_required"] is None  # az utasítást a Worker a következő ticketnél átveszi
+    hooks = {"PostToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "npm run lint"}]}]}
+    r = dash.post("/api/config/project", {"data": {**base, "worker": {"instructions": "x", "hooks": hooks}}})
+    assert "gamma" in r["restart_required"]
+    g = dash.get("/api/config/global")["current"]
+    assert dash.post("/api/config/global", {"data": {**g, "coordinator_model": "sonnet"}})["restart_required"]

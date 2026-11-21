@@ -835,6 +835,7 @@ def config_save(scope: str, body: ConfigIn, p: Principal = Dash):
         created = scope == "project" and not s.scalar(select(func.count()).select_from(auth.ApiKey).where(
             auth.ApiKey.project_id == v.scope_id, auth.ApiKey.revoked_at.is_(None)))
         out = ser.row(v)
+        out["restart_required"] = getattr(v, "restart_notice", None)
         if created:  # új projekt: Worker-kulcs egyszer, a hostnak (agenthub project key is kiadja)
             out["worker_key"] = auth.issue(s, "worker", v.scope_id)
         return out
@@ -848,7 +849,8 @@ class RollbackIn(BaseModel):
 @app.post("/api/config/{scope}/rollback")
 def config_rollback(scope: str, body: RollbackIn, p: Principal = Dash):
     with db.session() as s:
-        return ser.row(sv.rollback_config(s, p, scope, body.scope_id, body.version))
+        v = sv.rollback_config(s, p, scope, body.scope_id, body.version)
+        return {**ser.row(v), "restart_required": getattr(v, "restart_notice", None)}
 
 
 @app.post("/api/config-import")

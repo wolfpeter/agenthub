@@ -309,7 +309,7 @@ Worker engedélyezése, polling, retry, timeout, automatikus folytatás szabály
 
 Engedélyezett ticket-típusok, prioritási és feldolgozási szabályok.
 
-Claude modellstratégia, permission mode, engedélyezett eszközök és hooks.
+Claude modellstratégia, permission mode, engedélyezett eszközök és hooks. A `worker.hooks` a Claude Code settings `hooks` blokkja; az AgentHub változatlanul beírja a Worker generált settings-fájljába. A hook tetszőleges parancsot futtathat, ezért csak a Dashboard-kulcs birtokosa állíthatja.
 
 Projekt-specifikus skillek és instrukciók; meglévő CLAUDE.md és .claude tartalom leltára.
 
@@ -327,7 +327,7 @@ Titkok kezelése környezeti változóval vagy dedikált secret store-ral; titok
 
 ### 12.3 Konfiguráció-életciklus
 
-Minden változás validálandó, verziózott és auditálható legyen. Hibás konfiguráció ne aktiválódjon. Támogatott legyen a diff, korábbi verzió visszaállítása és import/export. A futó agentek a biztonságosan frissíthető beállításokat restart nélkül vegyék át; a sessiont vagy jogosultságot érintő változásnál jelezze, ha újraindítás szükséges.
+Minden változás validálandó, verziózott és auditálható legyen. Hibás konfiguráció ne aktiválódjon. Támogatott legyen a diff, korábbi verzió visszaállítása és import/export. A futó agentek a biztonságosan frissíthető beállításokat restart nélkül vegyék át; a sessiont vagy jogosultságot érintő változásnál jelezze, ha újraindítás szükséges. Újraindítást igényel: a Worker `permission_mode`, `allowed_tools`, `hooks` beállítása, a projekt könyvtára (a többi Worker tiltólistája is), valamint a Coordinator modellje. Ezekről a mentés után a Dashboard figyelmeztet, a teendővel együtt.
 
 ## 13. Projektmemória és tudásmegőrzés
 
