@@ -239,3 +239,26 @@ def test_prune_backups_keeps_recent_and_current(env, monkeypatch):
     admin.post("/api/config/global", {"data": {**g, "retention_days": 30}})
     cli.prune_backups(cur)
     assert not old.exists() and recent.exists() and cur.exists()
+
+
+def test_sse_stream_pushes_changes(env, server):
+    import httpx
+    got = []
+
+    def listen():
+        with httpx.Client(timeout=10).stream("GET", f"{server}/api/stream", headers={"Authorization": f"Bearer {DASH_KEY}"}) as r:
+            assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+            for line in r.iter_lines():
+                got.append(line)
+                if line.startswith("event: change"):
+                    return
+    th = threading.Thread(target=listen, daemon=True)
+    th.start()
+    for _ in range(100):
+        if got:
+            break
+        time.sleep(0.05)
+    assert got and got[0] == "event: hello"
+    cli.admin().post("/api/tickets", {"title": "SSE-teszt"})
+    th.join(5)
+    assert any(l.startswith("event: change") for l in got)

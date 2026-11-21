@@ -521,3 +521,20 @@ def test_network_guard_blocks_public_clients():
         assert _private_client(ok), ok
     for bad in ("8.8.8.8", "172.32.0.1", "100.128.0.1", "2001:4860::1", None, ""):
         assert not _private_client(bad), bad
+
+
+def test_cost_reported_estimated_or_unknown(dash, two_projects):
+    wa, _ = two_projects
+    g = dash.get("/api/config/global")["current"]
+    g["models"]["prices"] = {"sonnet": {"input": 3.0, "output": 15.0}}
+    dash.post("/api/config/global", {"data": g})
+    runs = []
+    for run in ({"model": "sonnet", "tokens_in": 1_000_000, "tokens_out": 100_000},  # becsült: 3 + 1.5
+                {"model": "sonnet", "tokens_in": 10, "tokens_out": 10, "cost_usd": 0.42},  # bejelentett
+                {"model": "ismeretlen", "tokens_in": 10, "tokens_out": 10}):  # nincs ár
+        t = new(dash, start_approved=True)
+        nxt(wa)
+        wa.post(f"/api/tickets/{t['id']}/finish", {"summary": "kész", "run": run})
+        runs.append(dash.get(f"/api/tickets/{t['id']}")["runs"][-1])
+        dash.post(f"/api/tickets/{t['id']}/transition", {"action": "accept"})
+    assert [(r["cost_source"], r["estimated_cost"]) for r in runs] == [("estimated", 4.5), ("reported", 0.42), ("unknown", None)]
