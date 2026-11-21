@@ -30,6 +30,10 @@ class Invalid(ValueError):
     pass
 
 
+class Conflict(Exception):
+    pass
+
+
 def phash(payload) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
@@ -458,25 +462,33 @@ def _mark_active(s, instance_id, tid):
         inst.active_ticket_id = tid
 
 
-def _own_in_progress(s, who: Principal, tid: int) -> Ticket:
+def _fence(t: Ticket, instance_id: str | None):
+    """Csak a ticketet claimelő példány írhat; átvétel után a régi session minden írása 409."""
+    if not instance_id or t.assigned_worker_id != instance_id:
+        raise Conflict(f"a #{t.id} ticketet nem ez a Worker-példány tartja (átvették vagy lejárt); kérj új ticketet")
+
+
+def _own_in_progress(s, who: Principal, tid: int, instance_id: str | None) -> Ticket:
     t = get_ticket(s, who, tid, lock=True)
     if who.role != "worker":
         raise Forbidden("csak a Worker")
     if t.status != "IN_PROGRESS":
         raise Invalid(f"a #{tid} ticket nincs feldolgozás alatt (most: {t.status})")
+    _fence(t, instance_id)
     return t
 
 
 def note(s, who: Principal, tid: int, text: str, instance_id: str | None = None):
-    t = _own_in_progress(s, who, tid)
+    t = _own_in_progress(s, who, tid, instance_id)
     event(s, t, who, "note", payload={"text": text[:4000]})
     heartbeat(s, who, instance_id, t)
     t.updated_at = now()
     changed(ticket=t.id)
 
 
-def ask(s, who: Principal, tid: int, question: str, context: str = "", suggested: str | None = None):
-    t = _own_in_progress(s, who, tid)
+def ask(s, who: Principal, tid: int, question: str, context: str = "", suggested: str | None = None,
+        instance_id: str | None = None):
+    t = _own_in_progress(s, who, tid, instance_id)
     if not question.strip():
         raise Invalid("üres kérdés")
     q = TicketQuestion(ticket_id=t.id, question=question.strip(), context=context or "", suggested_answer=suggested,
@@ -511,7 +523,7 @@ def answer(s, who: Principal, qid: int, text: str) -> TicketQuestion:
 
 
 def finish(s, who: Principal, tid: int, summary: str, payload: dict | None, run: dict | None, instance_id=None):
-    t = _own_in_progress(s, who, tid)
+    t = _own_in_progress(s, who, tid, instance_id)
     if not summary.strip():
         raise Invalid("az eredmény összefoglalója kötelező")
     t.result_summary, t.result_payload, t.last_error = summary.strip(), payload, None
@@ -520,7 +532,7 @@ def finish(s, who: Principal, tid: int, summary: str, payload: dict | None, run:
 
 
 def fail(s, who: Principal, tid: int, error: str, run: dict | None = None, instance_id=None):
-    t = _own_in_progress(s, who, tid)
+    t = _own_in_progress(s, who, tid, instance_id)
     t.last_error = error.strip() or "ismeretlen hiba"
     t.retry_count += 1
     _record_run(s, who, t, run, "failed", instance_id)
@@ -555,7 +567,7 @@ ACTION_TERMINAL = {"EXECUTED", "MANUALLY_CONFIRMED", "REJECTED", "FAILED", "CANC
 
 
 def propose_action(s, who: Principal, tid: int | None, target: str, action_type: str, reference: str | None,
-                   payload: dict) -> PendingAction:
+                   payload: dict, instance_id: str | None = None) -> PendingAction:
     if who.role not in ("worker", "coordinator"):
         raise Forbidden("műveletet agent javasol")
     if target not in TARGETS:
@@ -569,6 +581,7 @@ def propose_action(s, who: Principal, tid: int | None, target: str, action_type:
             # több javaslat is mehet egy körben: az első után a ticket már PENDING_APPROVAL
             if t.status not in ("IN_PROGRESS", "PENDING_APPROVAL"):
                 raise Invalid(f"a #{tid} ticket nincs feldolgozás alatt (most: {t.status})")
+            _fence(t, instance_id)
         else:
             t = get_ticket(s, who, tid)
     elif who.role == "worker":

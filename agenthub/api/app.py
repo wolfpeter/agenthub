@@ -43,6 +43,11 @@ async def _forbidden(_, e):
     return JSONResponse({"detail": str(e)}, 403)
 
 
+@app.exception_handler(sv.Conflict)
+async def _conflict(_, e):
+    return JSONResponse({"detail": str(e)}, 409)
+
+
 @app.exception_handler(sv.NotFound)
 async def _notfound(_, e):
     return JSONResponse({"detail": str(e)}, 404)
@@ -492,9 +497,9 @@ class AskIn(BaseModel):
 
 
 @app.post("/api/tickets/{tid}/ask")
-def ticket_ask(tid: int, body: AskIn, p: Principal = Worker):
+def ticket_ask(tid: int, body: AskIn, request: Request, p: Principal = Worker):
     with db.session() as s:
-        q = sv.ask(s, p, tid, body.question, body.context, body.suggested_answer)
+        q = sv.ask(s, p, tid, body.question, body.context, body.suggested_answer, instance(request))
         return ser.row(q)
 
 
@@ -538,9 +543,10 @@ class ActionIn(BaseModel):
 
 
 @app.post("/api/tickets/{tid}/actions")
-def ticket_action(tid: int, body: ActionIn, p: Principal = Depends(need("worker", "coordinator"))):
+def ticket_action(tid: int, body: ActionIn, request: Request, p: Principal = Depends(need("worker", "coordinator"))):
     with db.session() as s:
-        a = sv.propose_action(s, p, tid, body.target_system, body.action_type, body.target_reference, body.payload)
+        a = sv.propose_action(s, p, tid, body.target_system, body.action_type, body.target_reference, body.payload,
+                              instance(request))
         return _action(a)
 
 

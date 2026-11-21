@@ -300,3 +300,25 @@ def test_worker_with_valid_lease_counts_alive(client, dash):
     got = nxt(w2)  # lejárt lease: az új példány folytatja, eseménnyel
     assert got["ticket"]["id"] == t["id"] and got["resumed"] is True
     assert [e["event_type"] for e in dash.get(f"/api/tickets/{t['id']}")["events"]].count("resumed") == 1
+
+
+def test_stale_worker_fenced_after_takeover(client, dash):
+    k = make_project(dash, "solo")
+    w1, w2 = Api(client, k, "i1"), Api(client, k, "i2")
+    w1.post("/api/agents/register", {"instance_id": "i1"})
+    t = new(dash, "solo", start_approved=True)
+    nxt(w1)
+    _age("update tickets set lease_expires_at = now() - interval '1 minute' where id = :i", i=t["id"])
+    _age("update agent_instances set last_heartbeat = now() - interval '2 hours' where id = 'i1'")
+    w2.post("/api/agents/register", {"instance_id": "i2"})
+    assert nxt(w2)["ticket"]["id"] == t["id"]
+    tid = t["id"]
+    w1.post(f"/api/tickets/{tid}/note", {"text": "késő"}, ok=409)
+    w1.post(f"/api/tickets/{tid}/ask", {"question": "?"}, ok=409)
+    w1.post(f"/api/tickets/{tid}/finish", {"summary": "kész"}, ok=409)
+    w1.post(f"/api/tickets/{tid}/fail", {"error": "x"}, ok=409)
+    w1.post(f"/api/tickets/{tid}/actions", {"target_system": "trello", "action_type": "comment", "payload": {"text": "x"}}, ok=409)
+    Api(client, k).post(f"/api/tickets/{tid}/note", {"text": "fejléc nélkül"}, ok=409)
+    assert dash.get(f"/api/tickets/{tid}")["status"] == "IN_PROGRESS"
+    w2.post(f"/api/tickets/{tid}/finish", {"summary": "kész"})
+    assert dash.get(f"/api/tickets/{tid}")["status"] == "REVIEW"
