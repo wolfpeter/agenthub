@@ -674,13 +674,14 @@ def release_list(p: Principal = Worker):
 
 class ReleasedIn(BaseModel):
     summary: str
+    failed: bool = False
 
 
 @app.post("/api/tickets/{tid}/released")
 def ticket_released(tid: int, body: ReleasedIn, p: Principal = Worker):
     with db.session() as s:
-        sv.release_done(s, p, tid, body.summary)
-    return {"ok": True, "status": "COMPLETED"}
+        sv.release_done(s, p, tid, body.summary, body.failed)
+    return {"ok": True, "status": "READY" if body.failed else "COMPLETED"}
 
 
 class FailIn(BaseModel):

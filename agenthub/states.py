@@ -25,7 +25,7 @@ TRANSITIONS: dict[tuple[str, str], set[str]] = {
     # kész, de még nincs élesítve: a kiadás után a Worker (release-folyamat) vagy ember zárja
     ("IN_PROGRESS", "AWAITING_RELEASE"): {"worker"},
     ("AWAITING_RELEASE", "COMPLETED"): {"worker", "human"},
-    ("AWAITING_RELEASE", "READY"): {"human", "coordinator"},
+    ("AWAITING_RELEASE", "READY"): {"human", "coordinator", "worker"},  # worker: élesítés után talált prod-hiba
     # emberi átvétel nélküli lezárás: csak ha a projekt nem kér review-t (worker.review_required: false)
     ("IN_PROGRESS", "COMPLETED"): {"worker"},
     # a Coordinator a forrás új bemenetére újranyit, a csak válaszos tételt maga zárja

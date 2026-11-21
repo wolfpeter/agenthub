@@ -54,6 +54,7 @@ class GlobalConfig(Strict):
     # A Coordinator telepítésre szabott része (a Worker projektenkénti beállításának megfelelője)
     coordinator_instructions: str = ""
     coordinator_allowed_tools: list[str] = Field(default_factory=list)
+    coordinator_denied_tools: list[str] = Field(default_factory=list)
     coordinator_permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "default"
     # Helyi kapu a Worker elé (pl. kvótafigyelés): a jelölt ticket JSON-ját stdin-en kapja; 0 = mehet,
     # más kilépési kód = most ne vegyen fel munkát (a stdout első sora az ok)
@@ -67,6 +68,7 @@ class WorkerConfig(Strict):
     model: str | None = None
     permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "acceptEdits"
     allowed_tools: list[str] = Field(default_factory=list)
+    denied_tools: list[str] = Field(default_factory=list)  # bypassPermissions mellett is érvényes tiltások
     hooks: dict = Field(default_factory=dict)  # Claude Code settings `hooks` blokk, változatlanul a Worker settings-fájljába
     instructions: str = ""
     # false: a Worker maga zárhatja a ticketet (COMPLETED) emberi átvétel nélkül

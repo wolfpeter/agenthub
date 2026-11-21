@@ -125,13 +125,13 @@ def restart_notice(scope: str, scope_id: str, old: dict | None, new: dict) -> st
         return None
     if scope == "project":
         ow, nw = old.get("worker", {}), new.get("worker", {})
-        if any(ow.get(k) != nw.get(k) for k in ("permission_mode", "allowed_tools", "hooks")) \
+        if any(ow.get(k) != nw.get(k) for k in ("permission_mode", "allowed_tools", "denied_tools", "hooks")) \
                 or old.get("working_directory") != new.get("working_directory"):
             return (f"A Worker jogosultságai változtak. Indítsd újra a(z) {scope_id} Worker Claude-sessionjét az "
                     f"`agenthub worker command --project {scope_id}` által kiírt paranccsal. Ha a könyvtár változott, "
                     "a többi projekt Workerét is.")
     if scope == "global" and any(old.get(k) != new.get(k) for k in (
-            "coordinator_model", "coordinator_allowed_tools", "coordinator_permission_mode")):
+            "coordinator_model", "coordinator_allowed_tools", "coordinator_denied_tools", "coordinator_permission_mode")):
         return ("A Coordinator modellje vagy jogosultságai változtak: az `agenthub coordinator command` paranccsal "
                 "indítsd újra a sessiont.")
     return None
@@ -639,8 +639,8 @@ def release_list(s, who: Principal) -> list[Ticket]:
                           .order_by(Ticket.hotfix.desc(), Ticket.priority, Ticket.id)))
 
 
-def release_done(s, who: Principal, tid: int, summary: str):
-    """Élesítés után: lease nélkül, mert a kiadás nem egy ticket feldolgozása."""
+def release_done(s, who: Principal, tid: int, summary: str, failed: bool = False):
+    """Élesítés után: lease nélkül, mert a kiadás nem egy ticket feldolgozása. failed: prodon hibás → vissza P1-gyel."""
     if who.role != "worker":
         raise Forbidden("csak a projekt kulcsával")
     t = get_ticket(s, who, tid, lock=True)
@@ -648,6 +648,10 @@ def release_done(s, who: Principal, tid: int, summary: str):
         raise Invalid(f"a #{tid} ticket nem élesítésre vár (most: {t.status})")
     if not summary.strip():
         raise Invalid("az élesítés eredménye kötelező")
+    if failed:
+        t.priority, t.last_error = 1, summary.strip()
+        _move(s, t, "READY", who, "release_failed", {"summary": summary.strip()[:2000]})
+        return
     t.result_summary = f"{t.result_summary or ''}\n\nÉlesítve: {summary.strip()}".strip()
     _move(s, t, "COMPLETED", who, "released", {"summary": summary.strip()[:2000]})
 

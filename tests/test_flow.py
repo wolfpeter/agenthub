@@ -589,6 +589,13 @@ def test_release_cycle_block_and_self_complete(dash, two_projects):
     d = dash.get(f"/api/tickets/{t['id']}")
     assert d["status"] == "COMPLETED" and "v1.2" in d["result_summary"]
     wa.post(f"/api/tickets/{t['id']}/released", {"summary": "x"}, ok=400)
+    r = new(dash, start_approved=True)
+    nxt(wa)
+    wa.post(f"/api/tickets/{r['id']}/finish", {"summary": "UAT-on", "to": "release"})
+    wa.post(f"/api/tickets/{r['id']}/released", {"summary": "prodon 500-at ad", "failed": True})
+    d = dash.get(f"/api/tickets/{r['id']}")
+    assert d["status"] == "READY" and d["priority"] == 1 and d["start_approved"]
+    dash.post(f"/api/tickets/{r['id']}/transition", {"action": "cancel"})
 
     b = new(dash, start_approved=True)
     nxt(wa)

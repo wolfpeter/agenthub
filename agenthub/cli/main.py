@@ -336,7 +336,7 @@ def claude_settings(project: dict, all_projects: list[dict]) -> dict:
             wd = other["working_directory"]
             deny += [f"Read(/{wd}/**)", f"Edit(/{wd}/**)"]
     wc = (project.get("config") or {}).get("worker", {})
-    perms = {"deny": deny, "allow": [*allow, *wc.get("allowed_tools", [])],
+    perms = {"deny": [*deny, *wc.get("denied_tools", [])], "allow": [*allow, *wc.get("allowed_tools", [])],
              "defaultMode": wc.get("permission_mode", "acceptEdits")}
     out = {"permissions": perms, "env": {"AGENTHUB_ROLE": "worker", "AGENTHUB_PROJECT": project["id"]}}
     if wc.get("hooks"):
@@ -602,8 +602,8 @@ def cmd_release(a):
         out({"awaiting_release": [{k: t.get(k) for k in ("id", "title", "priority", "hotfix", "source_url", "result_summary")}
                                   for t in api.get("/api/release")]})
     else:
-        api.post(f"/api/tickets/{a.id}/released", {"summary": _text(a.summary)})
-        out({"id": a.id, "status": "COMPLETED"})
+        r = api.post(f"/api/tickets/{a.id}/released", {"summary": _text(a.summary), "failed": a.action == "reopen"})
+        out({"id": a.id, "status": r["status"]})
 
 
 def cmd_memory(a):
@@ -636,7 +636,8 @@ def cmd_coordinator(a):
     if a.action == "command":
         allow, deny = _agent_rules("coordinator")
         gc = admin().get("/api/config/global")["current"]
-        perms = {"allow": [*allow, *gc.get("coordinator_allowed_tools", [])], "deny": deny}
+        perms = {"allow": [*allow, *gc.get("coordinator_allowed_tools", [])],
+                 "deny": [*deny, *gc.get("coordinator_denied_tools", [])]}
         if gc.get("coordinator_permission_mode", "default") != "default":
             perms["defaultMode"] = gc["coordinator_permission_mode"]
         sf = home() / "data" / "coordinator-settings.json"
@@ -1017,10 +1018,12 @@ def main(argv=None):
     xs = x.add_subparsers(dest="action", required=True)
     r = xs.add_parser("list")
     r.add_argument("--project")
-    r = xs.add_parser("done", help="élesítve: a ticket lezárása")
-    r.add_argument("id", type=int)
-    r.add_argument("--summary", required=True)
-    r.add_argument("--project")
+    for name, hlp in (("done", "élesítve és mérve: a ticket lezárása"),
+                      ("reopen", "élesítés után prodon hibás: vissza Indíthatóba, P1-gyel")):
+        r = xs.add_parser(name, help=hlp)
+        r.add_argument("id", type=int)
+        r.add_argument("--summary", required=True)
+        r.add_argument("--project")
     x.set_defaults(fn=cmd_release)
 
     x = sub.add_parser("memory", help="projektmemória")

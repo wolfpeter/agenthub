@@ -237,7 +237,7 @@ Minden státuszváltozás TicketEvent rekordot hoz létre. A ticketnek kötelez�
 | REVIEW | COMPLETED | ember | Eredmény elfogadva |
 | REVIEW | READY | ember, Coordinator | Visszaküldés megjegyzéssel, vagy a forrás új bemenetére újranyitás |
 | AWAITING_RELEASE | COMPLETED | Worker, ember | Élesítve (`agenthub release done`, lease nélkül) |
-| AWAITING_RELEASE | READY | ember, Coordinator | Új visszajelzés élesítés előtt |
+| AWAITING_RELEASE | READY | ember, Coordinator, Worker | Új visszajelzés élesítés előtt, vagy prodon talált hiba (`agenthub release reopen`, P1) |
 | BLOCKED | READY | ember, Coordinator | A blokkoló feloldódott (pl. megjött a megrendelő válasza) |
 | COMPLETED | READY | ember, Coordinator | Újranyitás új bemenetre |
 | NEW, READY | COMPLETED | Coordinator | Csak válasz kellett, és a telepítés utasítása szerint a Coordinator megadta |
@@ -331,7 +331,7 @@ Memória beállításai, forrás-hozzárendelések és költségkeretek.
 
 ### 12.2 Globális konfiguráció
 
-Coordinator poll ciklus, források, adapterek, projektbesorolási szabályok. A Coordinator telepítésre szabott része: `coordinator_instructions` (a skill alapszabályai elé kerülő helyi szabályok), `coordinator_allowed_tools` és `coordinator_permission_mode` (a generált settings-fájlba).
+Coordinator poll ciklus, források, adapterek, projektbesorolási szabályok. A Coordinator telepítésre szabott része: `coordinator_instructions` (a skill alapszabályai elé kerülő helyi szabályok), `coordinator_allowed_tools`, `coordinator_denied_tools` és `coordinator_permission_mode` (a generált settings-fájlba). A Workernél ugyanez projektenként: `worker.allowed_tools`, `worker.denied_tools`, `worker.permission_mode`; a tiltás `bypassPermissions` mellett is érvényes (mérve).
 
 Helyi kapu a Worker elé: `worker_gate_command`. A `worker wait` a ticket lefoglalása előtt lefuttatja, stdin-en a jelölt ticket JSON-jával; 0 = mehet, más kilépési kód = most nem vesz fel munkát, a stdout első sora az ok. Így a telepítés a saját feltételeit (pl. előfizetési kvóta, éjszakai sáv) az AgentHub módosítása nélkül érvényesítheti. Ha a kapu nem fut le, nem enged munkát.
 

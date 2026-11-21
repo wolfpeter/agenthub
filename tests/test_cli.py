@@ -329,6 +329,7 @@ def test_coordinator_wait_reports_updates_once(env, capsys):
     g["cli_executables"] = ["python3"]
     g["coordinator_instructions"] = "Júlia levele P1."
     g["coordinator_allowed_tools"] = ["mcp__trello__write"]
+    g["coordinator_denied_tools"] = ["mcp__gmail__trash_thread"]
     g["coordinator_permission_mode"] = "bypassPermissions"
     admin.post("/api/config/global", {"data": g})
     data = home / "items.json"
@@ -340,6 +341,7 @@ def test_coordinator_wait_reports_updates_once(env, capsys):
     run(capsys, "coordinator", "command")
     st = json.loads((home / "data/coordinator-settings.json").read_text())
     assert "mcp__trello__write" in st["permissions"]["allow"] and st["permissions"]["defaultMode"] == "bypassPermissions"
+    assert "mcp__gmail__trash_thread" in st["permissions"]["deny"]
     assert run(capsys, "coordinator", "start")["instructions"] == "Júlia levele P1."
     assert run(capsys, "coordinator", "wait", "--timeout", "2")["idle"] is True  # új kártya: szabály szerint besorolva
     data.write_text('[{"id":"K1","t":"Kártya","l":"Review / UAT"}]')
