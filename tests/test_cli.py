@@ -185,3 +185,34 @@ def test_update_stops_on_cli_install_failure(env, monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "uv hiba" in err and "checkout abc123" in err and "/x/backup.tar.enc" in err
     assert not calls  # a szolgáltatásokat nem indította újra
+
+
+def _sha(b: bytes):
+    import hashlib
+    return hashlib.sha256(b).hexdigest()
+
+
+def test_file_write_refuses_symlinks_and_is_atomic(tmp_path, monkeypatch):
+    wd, outside = tmp_path / "proj", tmp_path / "outside"
+    wd.mkdir(), outside.mkdir()
+    (outside / "secret.txt").write_text("kint")
+    (wd / "link.txt").symlink_to(outside / "secret.txt")
+    (wd / "sub").symlink_to(outside)
+    w = lambda rel, base, bk=lambda d: None: cli._write_in_project(str(wd), rel, base, "pwned", bk)
+    with pytest.raises(ValueError):
+        w("link.txt", _sha(b"kint"))  # a cél symlink
+    with pytest.raises(ValueError):
+        w("sub/secret.txt", _sha(b"kint"))  # a szülőkönyvtár symlink
+    assert (outside / "secret.txt").read_text() == "kint"
+
+    (wd / "a.txt").write_text("régi")
+    monkeypatch.setattr(cli.os, "replace", lambda *a, **k: (_ for _ in ()).throw(OSError("megszakadt")))
+    with pytest.raises(OSError):
+        w("a.txt", _sha("régi".encode()))
+    assert (wd / "a.txt").read_text() == "régi" and sorted(p.name for p in wd.iterdir()) == ["a.txt", "link.txt", "sub"]
+    monkeypatch.undo()
+    saved = []
+    w("a.txt", _sha("régi".encode()), saved.append)
+    assert (wd / "a.txt").read_text() == "pwned" and saved == ["régi".encode()]
+    w("uj/b.txt", None)
+    assert (wd / "uj" / "b.txt").read_text() == "pwned"

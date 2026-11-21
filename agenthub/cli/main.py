@@ -402,6 +402,54 @@ def inventory(wd: str) -> dict:
     return {"scanned_at": datetime.now(timezone.utc).isoformat(), "files": files}
 
 
+def _inside(path: str, root: str) -> bool:
+    return path == root or path.startswith(root + "/")
+
+
+def _write_in_project(wd: str, rel: str, base_sha: str | None, content: str, backup) -> None:
+    """Ellenőrzés és írás ugyanazon a könyvtár-descriptoron: a symlink-csere nem viheti ki az írást a projektből.
+    Ideiglenes fájl + fsync + rename: megszakításkor nem marad félig írt fájl. A csere előtt backup(régi tartalom)."""
+    parent = os.path.realpath(os.path.join(wd, os.path.dirname(rel)))
+    if not _inside(parent, wd):
+        raise ValueError("a projekten kívüli útvonal")
+    os.makedirs(parent, exist_ok=True)
+    dfd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        if not _inside(os.path.realpath(f"/proc/self/fd/{dfd}"), wd):
+            raise ValueError("a projekten kívüli útvonal")
+        name = os.path.basename(rel)
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dfd)
+        except FileNotFoundError:
+            cur = None
+        except OSError:
+            raise ValueError("a cél symlink vagy nem olvasható fájl") from None
+        else:
+            with os.fdopen(fd, "rb") as f:
+                cur = f.read()
+        if (hashlib.sha256(cur).hexdigest() if cur is not None else None) != base_sha:
+            raise ValueError("a fájl a javaslat óta megváltozott; új javaslat kell")
+        if cur is not None:
+            backup(cur)
+        tmp = f".{name}.agenthub-{uuid.uuid4().hex[:8]}"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dfd)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(content.encode("utf-8"))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, name, src_dir_fd=dfd, dst_dir_fd=dfd)
+        except BaseException:
+            try:
+                os.unlink(tmp, dir_fd=dfd)
+            except FileNotFoundError:
+                pass
+            raise
+        os.fsync(dfd)
+    finally:
+        os.close(dfd)
+
+
 def apply_file_actions(api: Api, pid: str):
     """Jóváhagyott fájlmódosítás végrehajtása mentéssel és alapverzió-ellenőrzéssel (SPECIFICATION 13)."""
     acts = api.get("/api/worker/file-actions")
@@ -410,26 +458,20 @@ def apply_file_actions(api: Api, pid: str):
     wd = os.path.realpath(api.get(f"/api/projects/{pid}")["working_directory"])
     for act in acts:
         p = act["proposed_payload"]
-        target = os.path.realpath(os.path.join(wd, p["path"]))
-        if not target.startswith(wd + "/"):
-            api.post(f"/api/worker/file-actions/{act['id']}/report", {"ok": False, "result": {"error": "a projekten kívüli útvonal"}})
-            continue
-        cur = Path(target).read_bytes() if os.path.exists(target) else None
-        cur_hash = hashlib.sha256(cur).hexdigest() if cur is not None else None
-        if cur_hash != p.get("base_sha256"):
-            api.post(f"/api/worker/file-actions/{act['id']}/report",
-                     {"ok": False, "result": {"error": "a fájl a javaslat óta megváltozott; új javaslat kell"}})
-            continue
-        backup = None
-        if cur is not None:
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            b = home() / "backups" / "files" / pid / ts / p["path"]
+        report = f"/api/worker/file-actions/{act['id']}/report"
+        saved = []
+
+        def backup(data: bytes):
+            b = home() / "backups" / "files" / pid / datetime.now().strftime("%Y%m%d-%H%M%S") / p["path"]
             b.parent.mkdir(parents=True, exist_ok=True)
-            b.write_bytes(cur)
-            backup = str(b)
-        Path(target).parent.mkdir(parents=True, exist_ok=True)
-        Path(target).write_text(p["new_content"], encoding="utf-8")
-        api.post(f"/api/worker/file-actions/{act['id']}/report", {"ok": True, "result": {"backup": backup}})
+            b.write_bytes(data)
+            saved.append(str(b))
+        try:
+            _write_in_project(wd, p["path"], p.get("base_sha256"), p["new_content"], backup)
+        except (ValueError, OSError) as e:
+            api.post(report, {"ok": False, "result": {"error": str(e), "backup": saved[0] if saved else None}})
+            continue
+        api.post(report, {"ok": True, "result": {"backup": saved[0] if saved else None}})
 
 
 # ---------------------------------------------------------------- ticket-műveletek (Worker)
