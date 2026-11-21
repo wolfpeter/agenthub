@@ -633,7 +633,7 @@ def decide_action(s, who: Principal, aid: int, decision: str, note: str | None =
         a.approved_at = a.approved_at or now()
         a.execution_result = result or {"note": note}
     elif decision == "cancel":
-        if a.status in ACTION_TERMINAL:
+        if a.status in ACTION_TERMINAL or a.status == "EXECUTING":
             raise Invalid("lezárt művelet")
         a.status = "CANCELLED"
     else:
@@ -644,9 +644,29 @@ def decide_action(s, who: Principal, aid: int, decision: str, note: str | None =
     return a
 
 
+def claim_execution(s, aid: int) -> PendingAction | None:
+    """APPROVED → EXECUTING, hogy egy írás csak egyszer induljon el."""
+    a = s.scalar(select(PendingAction).where(PendingAction.id == aid).with_for_update())
+    if not a or a.status != "APPROVED" or a.target_system == "file" or a.approved_hash != phash(a.proposed_payload):
+        return None
+    a.status = "EXECUTING"
+    changed(what="actions")
+    return a
+
+
+def recover_executions(s) -> list[int]:
+    """Induláskor: a félbeszakadt végrehajtás bizonytalan (FAILED + uncertain), ember dönt; a még el nem indultak id-je."""
+    for a in s.scalars(select(PendingAction).where(PendingAction.status == "EXECUTING").with_for_update()):
+        record_execution(s, SYSTEM, a, False, {"uncertain": True, "error": (
+            "Az AgentHub végrehajtás közben leállt; nem tudni, megtörtént-e. Ellenőrizd a célrendszerben, "
+            "és ha megtörtént, jelöld kézzel végrehajtottnak.")})
+    return list(s.scalars(select(PendingAction.id).where(PendingAction.status == "APPROVED",
+                                                         PendingAction.target_system != "file")))
+
+
 def record_execution(s, who: Principal, a: PendingAction, ok: bool, result: dict):
     """Az író adapter (API) vagy a helyi fájlművelet (Worker CLI) eredménye."""
-    if a.status != "APPROVED":
+    if a.status not in ("APPROVED", "EXECUTING"):
         raise Invalid("csak jóváhagyott művelet hajtható végre")
     a.status = "EXECUTED" if ok else "FAILED"
     a.executed_at, a.execution_result = now(), result
@@ -660,7 +680,7 @@ def _after_action(s, a: PendingAction, who):
         event(s, t, who, "action_" + a.status.lower(), payload={"action_id": a.id})
         if a.status in ACTION_TERMINAL and t.status == "PENDING_APPROVAL":
             still = s.scalar(select(func.count()).select_from(PendingAction).where(
-                PendingAction.ticket_id == t.id, PendingAction.status.in_(("PENDING_APPROVAL", "APPROVED", "DRAFT"))))
+                PendingAction.ticket_id == t.id, PendingAction.status.in_(("PENDING_APPROVAL", "APPROVED", "EXECUTING", "DRAFT"))))
             if not still:
                 _move(s, t, "READY", SYSTEM, "actions_settled")
     s.flush()

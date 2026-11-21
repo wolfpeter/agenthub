@@ -3,7 +3,7 @@ import { ago, post, type Action, type State } from './api'
 import { Diff, useRun } from './ui'
 
 const ST_HU: Record<string, string> = {
-  PENDING_APPROVAL: 'jóváhagyásra vár', APPROVED: 'jóváhagyva', EXECUTED: 'végrehajtva', MANUALLY_CONFIRMED: 'kézzel végrehajtva',
+  PENDING_APPROVAL: 'jóváhagyásra vár', APPROVED: 'jóváhagyva', EXECUTING: 'végrehajtás alatt', EXECUTED: 'végrehajtva', MANUALLY_CONFIRMED: 'kézzel végrehajtva',
   REJECTED: 'elutasítva', FAILED: 'sikertelen', CANCELLED: 'megszakítva', DRAFT: 'tervezet',
 }
 const OPEN = ['PENDING_APPROVAL', 'APPROVED', 'FAILED']

@@ -9,7 +9,13 @@ from .configschema import WriterConfig
 
 
 class WriteError(Exception):
-    pass
+    def __init__(self, msg: str, uncertain: bool = False):
+        super().__init__(msg)
+        self.uncertain = uncertain  # a kérés kimehetett: vakon újraküldeni tilos
+
+
+# a kérés elküldése után szakadt meg: nem tudni, megtörtént-e
+_UNCERTAIN = (httpx.ReadTimeout, httpx.WriteTimeout, httpx.RemoteProtocolError, TimeoutError, smtplib.SMTPServerDisconnected)
 
 
 def execute(target: str, action_type: str, reference: str | None, payload: dict, cfg: WriterConfig,
@@ -25,7 +31,7 @@ def execute(target: str, action_type: str, reference: str | None, payload: dict,
     except WriteError:
         raise
     except Exception as e:  # a titok nem kerülhet a hibaüzenetbe
-        raise WriteError(secretstore.mask(f"{type(e).__name__}: {e}")) from None
+        raise WriteError(secretstore.mask(f"{type(e).__name__}: {e}"), isinstance(e, _UNCERTAIN)) from None
 
 
 def _email(action_type, reference, p, conf, client):

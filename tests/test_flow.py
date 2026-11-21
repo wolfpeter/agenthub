@@ -322,3 +322,54 @@ def test_stale_worker_fenced_after_takeover(client, dash):
     assert dash.get(f"/api/tickets/{tid}")["status"] == "IN_PROGRESS"
     w2.post(f"/api/tickets/{tid}/finish", {"summary": "kész"})
     assert dash.get(f"/api/tickets/{tid}")["status"] == "REVIEW"
+
+
+def _approved_jira_action(dash, wa):
+    t = new(dash, start_approved=True)
+    nxt(wa)
+    a = wa.post(f"/api/tickets/{t['id']}/actions", {"target_system": "jira", "action_type": "comment",
+                                                    "target_reference": "ABC-1", "payload": {"text": "ok"}})
+    return t, a
+
+
+def _wait_action(dash, aid, statuses=("EXECUTED", "FAILED")):
+    import time
+    for _ in range(100):
+        a = next(x for x in dash.get("/api/actions") if x["id"] == aid)
+        if a["status"] in statuses:
+            return a
+        time.sleep(0.05)
+    return a
+
+
+def test_restart_recovers_approved_and_flags_interrupted(monkeypatch, dash, two_projects):
+    from agenthub import writers
+    from agenthub.api import app as appmod
+    wa, _ = two_projects
+    _, a1 = _approved_jira_action(dash, wa)
+    monkeypatch.setattr(appmod, "_execute_async", lambda aid: None)  # "leállt" az approval után, mielőtt elindult
+    dash.post(f"/api/actions/{a1['id']}/decide", {"decision": "approve"})
+    _age("update pending_actions set status = 'EXECUTING' where id = :i", i=a1["id"])  # végrehajtás közben leállt
+    monkeypatch.undo()
+    calls = []
+    monkeypatch.setattr(writers, "execute", lambda *a, **k: calls.append(a) or {"status": 200})
+    appmod._startup()  # újraindulás
+    got = _wait_action(dash, a1["id"])
+    assert got["status"] == "FAILED" and got["execution_result"]["uncertain"] is True and not calls
+
+
+def test_restart_runs_approved_not_started(monkeypatch, dash, two_projects):
+    from agenthub import writers
+    from agenthub.api import app as appmod
+    wa, _ = two_projects
+    _, a = _approved_jira_action(dash, wa)
+    monkeypatch.setattr(appmod, "_execute_async", lambda aid: None)
+    dash.post(f"/api/actions/{a['id']}/decide", {"decision": "approve"})
+    monkeypatch.undo()
+    calls = []
+    monkeypatch.setattr(writers, "execute", lambda *x, **k: calls.append(x) or {"status": 200})
+    appmod._startup()
+    assert _wait_action(dash, a["id"])["status"] == "EXECUTED" and len(calls) == 1
+    appmod._startup()  # második indulás: nem fut újra
+    assert len(calls) == 1
+

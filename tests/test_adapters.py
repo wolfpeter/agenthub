@@ -67,3 +67,18 @@ def test_writers_shape_and_masking():
     with pytest.raises(writers.WriteError, match="nincs beállítva"):
         writers.execute("email", "send", None, {"to": "a", "subject": "s", "body": "b"}, WriterConfig())
     assert secretstore.mask("kulcs: kkkkkkkk") == "kulcs: ***"
+
+
+def test_writer_timeout_marked_uncertain():
+    def slow(req):
+        raise httpx.ReadTimeout("lassú", request=req)
+
+    def refused(req):
+        raise httpx.ConnectError("nem elérhető", request=req)
+    cfg = WriterConfig(jira={"base_url": "https://x.atlassian.net"})
+    with pytest.raises(writers.WriteError) as e:
+        writers.execute("jira", "comment", "ABC-1", {"text": "x"}, cfg, client(slow))
+    assert e.value.uncertain
+    with pytest.raises(writers.WriteError) as e:
+        writers.execute("jira", "comment", "ABC-1", {"text": "x"}, cfg, client(refused))
+    assert not e.value.uncertain

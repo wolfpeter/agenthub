@@ -16,7 +16,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy import func, select, text
 
-from .. import __version__, auth, db, serialize as ser, services as sv, states, writers
+from .. import __version__, auth, db, secretstore, serialize as ser, services as sv, states, writers
 from ..auth import Principal
 from ..events import bus
 from ..models import (AgentInstance, AgentRun, Installation, PendingAction, Project, ProjectKnowledge, Source,
@@ -68,6 +68,9 @@ def _startup():
             log.warning("kulcs regisztrálva a secrets-könyvtárból: %s", ", ".join(done))
         for p in s.scalars(select(Project)):
             sv.sync_memory_files(s, p.id)
+        pending = sv.recover_executions(s)
+    for aid in pending:  # újraindítás előtt jóváhagyott, de el nem indult műveletek
+        _execute_async(aid)
 
 
 
@@ -604,23 +607,30 @@ class DecideIn(BaseModel):
 
 
 def _execute_async(aid: int):
-    """Jóváhagyás után az író adapter a háttérben hajtja végre (SPECIFICATION 10)."""
+    """Jóváhagyás után az író adapter a háttérben hajtja végre (SPECIFICATION 10).
+    Az EXECUTING állapot előbb commitolódik: ha a folyamat közben leáll, induláskor bizonytalanként látszik, nem fut újra."""
     def run():
         with db.session() as s:
-            a = s.scalar(select(PendingAction).where(PendingAction.id == aid).with_for_update())
-            if not a or a.status != "APPROVED" or a.approved_hash != sv.phash(a.proposed_payload):
+            a = sv.claim_execution(s, aid)
+            if not a:
                 return
-            cfg = sv.writer_config(s)
-            try:
-                res = writers.execute(a.target_system, a.action_type, a.target_reference, a.proposed_payload, cfg)
-                sv.record_execution(s, auth.SYSTEM, a, True, res)
-            except writers.WriteError as e:
-                if "nincs beállítva" in str(e):
-                    a.execution_result = {"info": str(e)}  # marad APPROVED: kézi végrehajtásra vár
-                    sv.changed(what="actions")
-                else:
-                    sv.record_execution(s, auth.SYSTEM, a, False, {"error": str(e)})
-    threading.Thread(target=run, daemon=True).start()
+            job, cfg = (a.target_system, a.action_type, a.target_reference, a.proposed_payload), sv.writer_config(s)
+        uncertain = False
+        try:
+            res, ok = writers.execute(*job, cfg), True
+        except writers.WriteError as e:
+            res, ok, uncertain = {"error": str(e), **({"uncertain": True} if e.uncertain else {})}, False, e.uncertain
+        except Exception as e:  # váratlan hiba: nem tudni, kiment-e
+            res, ok, uncertain = {"error": secretstore.mask(f"{type(e).__name__}: {e}")[:500], "uncertain": True}, False, True
+        with db.session() as s:
+            a = s.scalar(select(PendingAction).where(PendingAction.id == aid).with_for_update())
+            if not ok and not uncertain and "nincs beállítva" in res["error"]:
+                a.status, a.execution_result = "APPROVED", {"info": res["error"]}  # kézi végrehajtásra vár
+                sv.changed(what="actions")
+            else:
+                sv.record_execution(s, auth.SYSTEM, a, ok, res)
+    # nem daemon: leállításkor a futó végrehajtás befejeződik
+    threading.Thread(target=run).start()
 
 
 @app.post("/api/actions/{aid}/decide")
