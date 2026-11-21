@@ -237,10 +237,15 @@ def cmd_welcome(a):
     print("  Worker:       agenthub worker command --project <azonosító>  (kiírja az indítóparancsot)\n")
 
 
-def compose(*args, check=True, capture=False):
+def compose_cmd() -> list[str]:
+    """Helyi eltérés (pl. több bind-cím) a nem verziózott compose.override.yaml-ban."""
     h = home()
-    cmd = ["docker", "compose", "--project-directory", str(h), "-f", str(h / "compose.yaml"), *args]
-    return subprocess.run(cmd, check=check, capture_output=capture, text=True)
+    files = [h / "compose.yaml", *([h / "compose.override.yaml"] if (h / "compose.override.yaml").exists() else [])]
+    return ["docker", "compose", "--project-directory", str(h), *[x for f in files for x in ("-f", str(f))]]
+
+
+def compose(*args, check=True, capture=False):
+    return subprocess.run([*compose_cmd(), *args], check=check, capture_output=capture, text=True)
 
 
 def wait_health(timeout=120) -> bool:
@@ -805,7 +810,7 @@ def cmd_restore(a):
     compose("stop", "api")
     compose("up", "-d", "db")
     time.sleep(3)
-    p = subprocess.run(["docker", "compose", "--project-directory", str(home()), "-f", str(home() / "compose.yaml"),
+    p = subprocess.run([*compose_cmd(),
                         "exec", "-T", "db", "psql", "-q", "-v", "ON_ERROR_STOP=1", "-U", "agenthub", "-d", "agenthub"],
                        input=dump, text=True, capture_output=True)
     if p.returncode != 0:

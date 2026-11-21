@@ -290,3 +290,10 @@ def test_config_export_import_roundtrip(env, capsys, tmp_path):
     capsys.readouterr()
     cli.main(["config", "export"])
     assert "coordinator_poll_interval_s: 700" in capsys.readouterr().out
+
+
+def test_compose_cmd_includes_local_override(env):
+    home, _ = env
+    assert "compose.override.yaml" not in " ".join(cli.compose_cmd())
+    (home / "compose.override.yaml").write_text("services: {}\n")
+    assert cli.compose_cmd()[-2:] == ["-f", str(home / "compose.override.yaml")]
