@@ -460,6 +460,18 @@ def test_semantic_duplicate_merged_into_existing(dash, coord, two_projects):
     coord.post(f"/api/tickets/{orig}/merge", {"into": did}, ok=400)
 
 
+def test_list_tag_does_not_make_cards_similar(dash, coord):
+    g = dash.get("/api/config/global")["current"]
+    g["cli_executables"] = ["echo"]
+    dash.post("/api/config/global", {"data": g})
+    dash.post("/api/config/source", {"data": {"id": "trk", "name": "T", "adapter_type": "cli",
+                                              "settings": {"executable": "echo", "fields": {"external_id": "id", "title": "t"}}}})
+    lst = "Élesítve, ellenőrizendő (PROD)"
+    coord.post("/api/sources/trk/events", {"items": [{"external_id": "A", "title": "Eseménynaptár képei túl sötétek", "list": lst}]})
+    r = coord.post("/api/sources/trk/events", {"items": [{"external_id": "B", "title": "Email cím megjelenítése", "list": lst}]})
+    assert coord.get("/api/coordinator/pending")[-1]["similar"] == [] and len(r["created"]) == 1
+
+
 def test_similarity_scores():
     from types import SimpleNamespace as N
     from agenthub import services as sv
@@ -642,12 +654,14 @@ def test_coordinator_gets_source_updates_and_acts(dash, coord, two_projects):
     assert "Lista: Backlog" in dash.get(f"/api/tickets/{tid}")["description"]
     dash.post(f"/api/tickets/{tid}/go", {"value": True})
     nxt(wa)
+    wa.post(f"/api/tickets/{tid}/note", {"text": "Komment a kártyára + mozgatás Review / UAT-ba"})
     wa.post(f"/api/tickets/{tid}/finish", {"summary": "UAT-on", "to": "release"})
-    post(list="Review / UAT")  # mi mozgattuk: listaváltás, a Coordinator dönt róla
+    post(list="Review / UAT")  # mi mozgattuk: a Coordinator a recent_notes-ból látja, hogy a visszhangunk
     post(list="Review / UAT", comments="Ügyfél (1):\nnem jó a gomb")
     r = coord.get(f"/api/coordinator/updates?after={cur}")
     assert [u["ticket"] for u in r["updates"]] == [tid, tid]
     assert r["updates"][0]["list_from"] == "Backlog" and "nem jó" in r["updates"][1]["comments"]
+    assert "mozgatás Review / UAT-ba" in r["updates"][0]["recent_notes"][0]
     assert coord.get(f"/api/coordinator/updates?after={r['cursor']}")["updates"] == []
     coord.post(f"/api/tickets/{tid}/coordinator", {"action": "reopen", "reason": "UAT-visszajelzés", "priority": 1,
                                                    "title": "[UAT] Kártya"})
@@ -660,3 +674,15 @@ def test_coordinator_gets_source_updates_and_acts(dash, coord, two_projects):
     q = coord.post("/api/tickets", {"title": "Hol találom?"})
     coord.post(f"/api/tickets/{q['id']}/coordinator", {"action": "done", "reason": "megválaszoltuk a kártyán"})
     assert [dash.get(f"/api/tickets/{x}")["status"] for x in (n["id"], q["id"])] == ["CANCELLED", "COMPLETED"]
+
+
+def test_reply_to_dismissed_thread_opens_new_item(dash, coord):
+    g = dash.get("/api/config/global")["current"]
+    g["cli_executables"] = ["echo"]
+    dash.post("/api/config/global", {"data": g})
+    dash.post("/api/config/source", {"data": {"id": "mail", "name": "M", "adapter_type": "cli",
+                                              "settings": {"executable": "echo", "fields": {"external_id": "id", "title": "t"}}}})
+    first = coord.post("/api/sources/mail/events", {"items": [{"external_id": "m1", "thread_id": "T", "title": "Hírlevél"}]})["created"][0]
+    coord.post(f"/api/tickets/{first}/coordinator", {"action": "dismiss", "reason": "automata"})
+    r = coord.post("/api/sources/mail/events", {"items": [{"external_id": "m2", "thread_id": "T", "title": "Re: kérdésem van"}]})
+    assert len(r["created"]) == 1 and r["created"][0] != first

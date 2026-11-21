@@ -52,7 +52,7 @@ Print one line per ticket: `#<id> → <project|triage> (<type>, P<n>)[, Mehet: <
 
 ## Handling an update on an existing ticket
 
-An update means the source changed under a ticket that already exists: a new comment, a reply e-mail in the thread (`thread_reply`), a move to another list (`list_from` → `list`), changed labels, or edited content. Read `comments`/`description`, then decide:
+An update means the source changed under a ticket that already exists: a new comment, a reply e-mail in the thread (`thread_reply`), a move to another list (`list_from` → `list`), changed labels, or edited content. Read `comments`/`description` and `recent_notes` (what our agents logged on the ticket, e.g. a comment they posted or a card they moved), then decide. For the full history run `agenthub coordinator show <id>`.
 
 - Nothing to do (our own comment or move echoed back, a thank-you, a pure acknowledgement): do nothing.
 - New work or feedback on finished or waiting work (`REVIEW`, `AWAITING_RELEASE`, `COMPLETED`, `BLOCKED`, `FAILED`):

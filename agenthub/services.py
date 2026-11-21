@@ -236,6 +236,7 @@ def get_ticket(s, who: Principal, tid: int, lock=False) -> Ticket:
 
 
 REOPEN_FROM = ("REVIEW", "AWAITING_RELEASE", "COMPLETED", "BLOCKED", "FAILED")
+HOTFIX_VOID_FROM = ("REVIEW", "AWAITING_RELEASE", "COMPLETED")  # a leszállított munka újranyitása; retry, feloldás nem
 
 
 def _move(s, t: Ticket, new: str, who: Principal, etype="status", payload=None):
@@ -248,7 +249,7 @@ def _move(s, t: Ticket, new: str, who: Principal, etype="status", payload=None):
         if new != "PENDING_APPROVAL":  # ugyanabban a körben a lease birtokosa további műveletet javasolhat
             t.current_lease_id = None
         s.execute(update(AgentInstance).where(AgentInstance.active_ticket_id == t.id).values(active_ticket_id=None))
-    if t.hotfix and (new in states.FINAL or (new == "READY" and old in REOPEN_FROM)):
+    if t.hotfix and (new in states.FINAL or (new == "READY" and old in HOTFIX_VOID_FROM)):
         # a hotfix egy szállításra szóló élesítési engedély: lezárás vagy újranyitás után nem él tovább
         t.hotfix, t.hotfix_by, t.hotfix_at = False, None, None
         event(s, t, who, "hotfix_off", payload={"reason": f"{old} → {new}"})
@@ -708,12 +709,16 @@ def coordinator_updates(s, after: int | None, limit: int = 50) -> dict:
         p = e.payload or {}
         if not p.get("notify"):
             continue
+        notes = [n.payload.get("text") for n in s.scalars(
+            select(TicketEvent).where(TicketEvent.ticket_id == t.id, TicketEvent.event_type == "note", TicketEvent.id < e.id)
+            .order_by(TicketEvent.id.desc()).limit(3)) if n.payload]
         ups.append({"ticket": t.id, "title": t.title, "status": t.status, "project": t.project_id, "priority": t.priority,
                     "source": t.source_id, "url": t.source_url, "list": p.get("list"), "list_from": p.get("list_from"),
                     "labels": p.get("labels"), "labels_from": p.get("labels_from"), "sender": p.get("sender"),
                     "thread_reply": bool(p.get("thread_reply")), "applied": p.get("applied") or [],
                     "comments": (p.get("comments") or "")[-1500:] or None,
-                    "description": (p.get("description") or "")[:600] if p.get("thread_reply") else None})
+                    "description": (p.get("description") or "")[:600] if p.get("thread_reply") else None,
+                    "recent_notes": [x[:300] for x in notes]})  # a saját visszhang felismeréséhez (pl. "kártya UAT-ba mozgatva")
     return {"cursor": rows[-1][0].id if rows else after, "updates": ups}
 
 
@@ -1084,7 +1089,7 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
             if t is not None and t.status == "CANCELLED":  # a szál ticketjét összevonták: a válasz a célhoz megy
                 target = s.scalar(select(TicketSourceRef.ticket_id).where(TicketSourceRef.merged_from_ticket_id == t.id)
                                   .limit(1))
-                t = s.get(Ticket, target) if target else t
+                t = s.get(Ticket, target) if target else None  # elvetett szál (pl. automata levél): új tétel
         if t is not None:
             payload = {k: item.get(k) for k in ("title", "description", "url", "sender", "list", "labels") if item.get(k)}
             p0 = prev or {}
@@ -1146,8 +1151,12 @@ def _stems(text: str) -> set[str]:
     return {w[:6] for w in _WORD.findall(text.lower()) if w not in _STOP}
 
 
+_META = re.compile(r"^\[(?:Lista|Címkék): [^\n]*\]\n*")
+
+
 def _words(t: Ticket) -> tuple[set[str], set[str]]:
-    return _stems(t.title), _stems(f"{t.title} {(t.description or '')[:500]}")
+    # a forrás lista/címke sora nem tartalom: azonos listán ülő, eltérő kártyák különben hasonlónak tűnnének
+    return _stems(t.title), _stems(f"{t.title} {_META.sub('', t.description or '')[:500]}")
 
 
 def _similarity(a, b) -> float:

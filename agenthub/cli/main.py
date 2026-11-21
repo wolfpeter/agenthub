@@ -399,6 +399,9 @@ def cmd_worker(a):
         while True:
             apply_file_actions(api, pid)
             gate = _gate(api)
+            if gate is True:
+                out({"stop": True})
+                return
             if gate:  # a helyi kapu (pl. kvóta) most nem enged munkát: várunk, lefoglalás nélkül
                 if time.time() + 60 >= end:
                     out({"idle": True, "gate": gate})
@@ -423,9 +426,12 @@ def cmd_worker(a):
         out({"stopped": True})
 
 
-def _gate(api: Api) -> str | None:
-    """worker_gate_command: a jelölt ticket JSON-ja stdin-en; 0 = mehet, más = ne most (stdout első sora az ok)."""
+def _gate(api: Api) -> str | bool | None:
+    """worker_gate_command: a jelölt ticket JSON-ja stdin-en; 0 = mehet, más = ne most (stdout első sora az ok).
+    True: a Workert leállították a Dashboardon."""
     pk = api.get("/api/worker/peek")
+    if pk.get("stop"):
+        return True
     if not pk.get("gate") or not pk.get("ticket"):
         return None
     try:
@@ -725,6 +731,12 @@ def cmd_coordinator(a):
     elif a.action == "go":
         t = api.post(f"/api/tickets/{a.id}/go", {"value": True, "reason": a.reason})
         out({"id": t["id"], "go": t["start_approved"]})
+    elif a.action == "show":
+        t = api.get(f"/api/tickets/{a.id}")
+        t["events"] = [{k: e[k] for k in ("event_type", "new_status", "actor_type", "payload", "created_at")}
+                       for e in t["events"][-30:]]
+        out({k: t.get(k) for k in ("id", "title", "status", "project_id", "priority", "hotfix", "source_id", "source_url",
+                                   "description", "result_summary", "last_error", "questions", "events")})
     elif a.action in ("reopen", "set", "done", "dismiss", "note"):
         t = api.post(f"/api/tickets/{a.id}/coordinator", {"action": a.action, "reason": _text(getattr(a, "reason", None)),
                                                           "priority": getattr(a, "priority", None),
@@ -1061,6 +1073,8 @@ def main(argv=None):
     r.add_argument("id", type=int)
     r.add_argument("--into", type=int, required=True)
     r.add_argument("--add", help="új információ a meglévő tickethez ('-' = stdin, '@fájl')")
+    r = xs.add_parser("show", help="a ticket részletei és előzményei (megjegyzések, válaszok)")
+    r.add_argument("id", type=int)
     for name, hlp in (("reopen", "újranyitás új bemenetre (REVIEW/AWAITING_RELEASE/COMPLETED/BLOCKED/FAILED → READY)"),
                       ("set", "prioritás vagy cím módosítása"), ("done", "kész munka nélkül (pl. megválaszolt kérdés)"),
                       ("dismiss", "nem munka (pl. automata levél): NEW → CANCELLED"), ("note", "megjegyzés a tickethez")):

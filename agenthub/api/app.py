@@ -560,9 +560,13 @@ def _worker_payload(s, t, resumed, p):
 
 
 @app.get("/api/worker/peek")
-def worker_peek(p: Principal = Worker):
-    """A következő jelölt lefoglalás nélkül, a helyi kapunak (worker_gate_command)."""
+def worker_peek(request: Request, p: Principal = Worker):
+    """A következő jelölt lefoglalás nélkül, a helyi kapunak (worker_gate_command). Életjel is: a kapu mögött várakozó
+    Worker így nem tűnik halottnak, és a leállítást is látja."""
     with db.session() as s:
+        sv.heartbeat(s, p, instance(request))
+        if sv.control_state(s, f"worker:{p.project_id}") == "stop":
+            return {"stop": True}
         t = sv.peek_ticket(s, p)
         return {"ticket": ser.ticket(t, brief=True) if t else None,
                 "gate": sv.global_config(s).worker_gate_command}
