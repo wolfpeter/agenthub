@@ -418,3 +418,45 @@ def test_expired_lease_fenced_until_reclaimed(client, dash):
     assert again["ticket"]["id"] == t["id"] and again["lease_id"] != first
     w1.post(f"/api/tickets/{t['id']}/finish", {"summary": "kész"})
     assert dash.get(f"/api/tickets/{t['id']}")["status"] == "REVIEW"
+
+
+def _src(dash, sid="trk", project=None):
+    g = dash.get("/api/config/global")["current"]
+    g["cli_executables"] = ["echo"]
+    g["routing_rules"] = [{"project": "alpha", "title": "webshop"}]
+    dash.post("/api/config/global", {"data": g})
+    dash.post("/api/config/source", {"data": {"id": sid, "name": sid, "adapter_type": "cli", "project": project,
+                                              "settings": {"executable": "echo", "fields": {"external_id": "id", "title": "t"}}}})
+
+
+def test_semantic_duplicate_merged_into_existing(dash, coord, two_projects):
+    _src(dash)
+    _src(dash, "mail")
+    ev = lambda sid, **it: coord.post(f"/api/sources/{sid}/events", {"items": [it]})
+    first = ev("trk", external_id="T-1", title="A webshop kosár gomb nem működik mobilon", url="http://t/1")
+    assert first["routed"]  # nincs hasonló: a szabály besorolja
+    orig = first["created"][0]
+    dup = ev("mail", external_id="<m1>", title="Re: a webshop kosár gomb nem működik mobilon",
+             description="Androidon Chrome-ban is.")
+    assert not dup["routed"]  # hasonló van: a Coordinator dönt, nem a szabály
+    did = dup["created"][0]
+    pending = coord.get("/api/coordinator/pending")
+    assert pending[0]["id"] == did and pending[0]["similar"][0]["id"] == orig
+    coord.post(f"/api/tickets/{did}/merge", {"into": orig, "addition": "Androidon Chrome-ban is előjön."})
+    o, d = dash.get(f"/api/tickets/{orig}"), dash.get(f"/api/tickets/{did}")
+    assert d["status"] == "CANCELLED" and "Androidon Chrome-ban is előjön." in o["description"]
+    assert [(r["source_id"], r["external_id"]) for r in o["source_refs"]] == [("mail", "<m1>")]
+    # az összevont forráselem későbbi frissítése a meglévő tickethez fut, új ticket nélkül
+    later = ev("mail", external_id="<m1>", title="Re: a webshop kosár gomb nem működik mobilon", description="Már iOS-en is.")
+    assert later["created"] == [] and later["updated"] == [orig]
+    assert dash.get(f"/api/tickets/{orig}")["title"] == "A webshop kosár gomb nem működik mobilon"  # másodlagos forrás nem írja felül
+    # lezárt ticketbe és nem NEW ticketet nem lehet összevonni
+    coord.post(f"/api/tickets/{orig}/merge", {"into": did}, ok=400)
+
+
+def test_similarity_ignores_unrelated_and_closed():
+    from types import SimpleNamespace as N
+    from agenthub import services as sv
+    a, b = N(title="A webshop kosár gomb nem működik", description=""), N(title="Új számlázási riport exportja", description="")
+    wa, wb = sv._words(a), sv._words(b)
+    assert len(wa & wb) / len(wa | wb) < sv.DUP_THRESHOLD

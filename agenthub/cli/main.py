@@ -618,7 +618,8 @@ def cmd_coordinator(a):
             pending = api.get("/api/coordinator/pending")
             if pending:
                 out({"pending": [{"id": t["id"], "title": t["title"], "description": (t.get("description") or "")[:400],
-                                  "source": t.get("source_id"), "url": t.get("source_url")} for t in pending],
+                                  "source": t.get("source_id"), "url": t.get("source_url"),
+                                  **({"similar": t["similar"]} if t.get("similar") else {})} for t in pending],
                      "projects": ctx["projects"], "ingested": totals})
                 return
             if time.time() >= end:
@@ -630,6 +631,9 @@ def cmd_coordinator(a):
                 "reason": a.reason, "go": bool(a.go_reason), "go_reason": a.go_reason}
         t = api.post(f"/api/tickets/{a.id}/classify", body)
         out({"id": t["id"], "status": t["status"], "project": t["project_id"], "go": t["start_approved"]})
+    elif a.action == "merge":
+        t = api.post(f"/api/tickets/{a.id}/merge", {"into": a.into, "addition": _text(a.add)})
+        out({"merged": a.id, "into": t["id"], "status": t["status"]})
     elif a.action == "go":
         t = api.post(f"/api/tickets/{a.id}/go", {"value": True, "reason": a.reason})
         out({"id": t["id"], "go": t["start_approved"]})
@@ -928,6 +932,10 @@ def main(argv=None):
     r = xs.add_parser("go")
     r.add_argument("id", type=int)
     r.add_argument("--reason", required=True)
+    r = xs.add_parser("merge", help="szemantikus duplikátum összevonása egy meglévő tickettel")
+    r.add_argument("id", type=int)
+    r.add_argument("--into", type=int, required=True)
+    r.add_argument("--add", help="új információ a meglévő tickethez ('-' = stdin, '@fájl')")
     xs.add_parser("stop")
     x.set_defaults(fn=cmd_coordinator)
 

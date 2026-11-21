@@ -145,6 +145,20 @@ class SourceEvent(Base):
     __table_args__ = (UniqueConstraint("source_id", "external_id", "payload_hash", name="uq_source_event"),)
 
 
+class TicketSourceRef(Base):
+    """A tickethez összevont további forráselemek (szemantikus duplikátum): a frissítéseik is ide futnak."""
+    __tablename__ = "ticket_source_refs"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("sources.id"))
+    external_id: Mapped[str] = mapped_column(String(500))
+    url: Mapped[str | None] = mapped_column(String(1000))
+    merged_from_ticket_id: Mapped[int | None] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(TS, default=now)
+
+    __table_args__ = (UniqueConstraint("source_id", "external_id", name="uq_ticket_source_ref"),)
+
+
 class TicketQuestion(Base):
     __tablename__ = "ticket_questions"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

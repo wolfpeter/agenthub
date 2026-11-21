@@ -124,7 +124,7 @@ Lekéri az új vagy módosult elemeket és kommenteket.
 
 Normalizálja az eseményeket, rögzíti a külső azonosítókat és a forráshivatkozásokat.
 
-Deduplikál stabil external ID, thread ID és forrásazonosító alapján; szükség esetén szemantikai hasonlóságot használ.
+Deduplikál stabil external ID, thread ID és forrásazonosító alapján; szükség esetén szemantikai hasonlóságot használ. A hasonlóságot a `coordinator wait` modell nélkül, szóegyezéssel méri a nyitott ticketekhez. Hasonló ticket esetén az új elemet nem sorolja be szabály alapján, hanem a Coordinator elé teszi a hasonló ticketek listájával. Ha a Coordinator duplikátumnak ítéli, összevonja (`agenthub coordinator merge`): a meglévő ticket megkapja az új elem forrásazonosítóját további forrásként, és ha az új elem új információt hoz, azzal kiegészül a leírása. Az új ticket CANCELLED lesz „összevonva” eseménnyel. Az összevont forráselem későbbi frissítései a meglévő tickethez futnak, de a címét és a leírását nem írják felül. Lezárt (COMPLETED, CANCELLED) tickethez nem lehet összevonni.
 
 Megkeresi a kapcsolódó meglévő ticketet; ha talál, frissíti és eseményt fűz hozzá.
 
@@ -232,6 +232,7 @@ Minden státuszváltozás TicketEvent rekordot hoz létre. A ticketnek kötelez�
 | REVIEW | COMPLETED | ember | Eredmény elfogadva |
 | REVIEW | READY | ember | Visszaküldés megjegyzéssel |
 | FAILED | READY | ember, rendszer | Kézi újrapróbálás, vagy automatikus retry a projekt retry-korlátjáig |
+| NEW | CANCELLED | Coordinator | Csak szemantikus duplikátum összevonásakor, a meglévő ticket megjelölésével (lásd 5) |
 | bármely nem végállapot | CANCELLED | ember | Indoklással; aktív lease felszabadul |
 
 Végállapot: COMPLETED, CANCELLED. Ticketet a Worker nem zárhat le COMPLETED-re; az emberi elfogadás kötelező.
@@ -419,6 +420,7 @@ A pontos OpenAPI-sémát, endpointneveket, request/response modelleket és jogos
 | AgentInstance | Id, ProjectId (Worker esetén kötelező), Role, Status, LastHeartbeat, SessionId, StartedAt |
 | Ticket | Id, ProjectId, Title, Description, Type, Priority, Status, SourceId, ExternalId, SourceUrl, lease és eredménymezők |
 | TicketEvent | Id, TicketId, EventType, Actor, Payload, CreatedAt |
+| TicketSourceRef | Id, TicketId, SourceId, ExternalId, Url, MergedFromTicketId; összevont további forráselemek |
 | Source | Id, Name, AdapterType, Config, IsActive, LastPollAt |
 | SourceEvent | Id, SourceId, ExternalId, ThreadId, PayloadHash, ObservedAt, ProcessedAt |
 | TicketQuestion | Id, TicketId, Question, SuggestedAnswer, Status, CreatedAt |

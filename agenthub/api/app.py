@@ -19,7 +19,7 @@ from sqlalchemy import func, select, text
 from .. import __version__, auth, db, secretstore, serialize as ser, services as sv, states, writers
 from ..auth import Principal
 from ..events import bus
-from ..models import (AgentInstance, AgentRun, Installation, PendingAction, Project, ProjectKnowledge, Source,
+from ..models import (TicketSourceRef, AgentInstance, AgentRun, Installation, PendingAction, Project, ProjectKnowledge, Source,
                       Ticket, TicketAnswer, TicketEvent, TicketQuestion, now)
 
 log = logging.getLogger("agenthub")
@@ -342,6 +342,8 @@ def ticket_detail(tid: int, p: Principal = Any):
         d["actions"] = [_action(a) for a in s.scalars(select(PendingAction).where(PendingAction.ticket_id == tid)
                                                       .order_by(PendingAction.id))]
         d["runs"] = [ser.row(r) for r in s.scalars(select(AgentRun).where(AgentRun.ticket_id == tid).order_by(AgentRun.id))]
+        d["source_refs"] = [ser.row(r) for r in s.scalars(select(TicketSourceRef).where(TicketSourceRef.ticket_id == tid)
+                                                           .order_by(TicketSourceRef.id))]
         return d
 
 
@@ -396,6 +398,18 @@ def classify(tid: int, body: ClassifyIn, p: Principal = Coord):
         t = sv.get_ticket(s, p, tid, lock=True)
         sv.classify(s, p, t, body.project_id, body.type, body.priority, body.triage, body.reason, body.go, body.go_reason)
         return ser.ticket(t, brief=True)
+
+
+class MergeIn(BaseModel):
+    into: int
+    addition: str | None = None
+
+
+@app.post("/api/tickets/{tid}/merge")
+def merge(tid: int, body: MergeIn, p: Principal = Depends(need("coordinator", "dashboard"))):
+    with db.session() as s:
+        dup = sv.get_ticket(s, p, tid, lock=True)
+        return ser.ticket(sv.merge_ticket(s, p, dup, body.into, body.addition), brief=True)
 
 
 # ---------------------------------------------------------------- agentek
@@ -730,7 +744,7 @@ def coordinator_context(request: Request, p: Principal = Coord):
 @app.get("/api/coordinator/pending")
 def coordinator_pending(p: Principal = Coord):
     with db.session() as s:
-        return [ser.ticket(t, brief=True) for t in sv.coordinator_pending(s)]
+        return [{**ser.ticket(t, brief=True), "similar": sv.similar_tickets(s, t)} for t in sv.coordinator_pending(s)]
 
 
 # ---------------------------------------------------------------- konfiguráció

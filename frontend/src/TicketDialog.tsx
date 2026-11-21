@@ -4,7 +4,8 @@ import { Dialog, Skel, useRun, useUI } from './ui'
 import { ActionCard } from './Approval'
 import { TYPES } from './NewTicket'
 
-interface Detail extends Ticket { events: Ev[]; questions: Question[]; actions: Action[]; runs: any[] }
+interface Ref { id: number; source_id: string; external_id: string; url: string | null; merged_from_ticket_id: number | null }
+interface Detail extends Ticket { events: Ev[]; questions: Question[]; actions: Action[]; runs: any[]; source_refs: Ref[] }
 
 export default function TicketDialog({ id, S, onClose }: { id: number; S: State; onClose: () => void }) {
   const run = useRun()
@@ -45,6 +46,8 @@ export default function TicketDialog({ id, S, onClose }: { id: number; S: State;
           </>
         )}
         {d.source_url && <div className="mt-1"><a href={d.source_url} target="_blank" rel="noreferrer">Forrás megnyitása</a></div>}
+        {d.source_refs.length > 0 && <div className="mt-1 text-[12px] text-mut">Összevont források: {d.source_refs.map(r => (
+          <span key={r.id} className="mr-2">{r.url ? <a href={r.url} target="_blank" rel="noreferrer">{r.source_id} {r.external_id}</a> : `${r.source_id} ${r.external_id}`}{r.merged_from_ticket_id && ` (#${r.merged_from_ticket_id})`}</span>))}</div>}
         <div className="flex flex-wrap gap-2 mt-2 items-center">
           {['READY', 'NEW', 'NEEDS_TRIAGE'].includes(st) && (
             <label className="flex gap-1 items-center"><input type="checkbox" checked={d.start_approved} onChange={e => run(() => post(`/api/tickets/${id}/go`, { value: e.target.checked })).then(reload)} /> Mehet

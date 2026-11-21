@@ -15,7 +15,8 @@ from .auth import SYSTEM, Principal
 from .configschema import (FullConfig, GlobalConfig, ProjectConfig, SourceConfig, WriterConfig)
 from .events import bus
 from .models import (AgentInstance, AgentRun, AuditEvent, ConfigVersion, Control, PendingAction, Project,
-                     ProjectKnowledge, Source, SourceEvent, Ticket, TicketAnswer, TicketEvent, TicketQuestion, now)
+                     ProjectKnowledge, Source, SourceEvent, Ticket, TicketAnswer, TicketEvent, TicketQuestion,
+                     TicketSourceRef, now)
 
 
 class Forbidden(Exception):
@@ -881,6 +882,9 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
                          payload=item)
         s.add(se)
         t = s.scalar(select(Ticket).where(Ticket.source_id == src.id, Ticket.external_id == ext))
+        if t is None:  # korábban egy meglévő ticketbe összevont elem
+            t = s.scalar(select(Ticket).join(TicketSourceRef, TicketSourceRef.ticket_id == Ticket.id)
+                         .where(TicketSourceRef.source_id == src.id, TicketSourceRef.external_id == ext))
         if t is None and item.get("thread_id"):
             t = s.scalar(select(Ticket).where(Ticket.source_id == src.id, Ticket.thread_id == item["thread_id"])
                          .order_by(Ticket.id.desc()).limit(1))
@@ -898,6 +902,13 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
             s.add(t)
             s.flush()
             event(s, t, who, "created", None, "NEW", {"source": src.id, "sender": item.get("sender")})
+            similar = similar_tickets(s, t)
+            if similar:  # szemantikus egyezés gyanúja: a Coordinator dönt, nem a szabály
+                event(s, t, who, "possible_duplicate", payload={"similar": similar})
+                out["created"].append(t.id)
+                se.ticket_id, se.processed_at = t.id, now()
+                s.flush()
+                continue
             rule = match_rule(gc.routing_rules, item, src.id)
             project = rule.project if rule else (sc.project if sc else None)
             if rule and rule.type:
@@ -913,6 +924,64 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
         s.flush()
     changed(what="sources")
     return out
+
+
+_WORD = re.compile(r"\w{3,}")
+DUP_THRESHOLD = 0.4
+
+
+def _words(t: Ticket) -> set[str]:
+    return set(_WORD.findall(f"{t.title} {(t.description or '')[:500]}".lower()))
+
+
+def similar_tickets(s, t: Ticket, limit: int = 3) -> list[dict]:
+    """Nyitott ticketek szóhalmaz-egyezés (Jaccard) alapján, modell és embedding nélkül.
+    shortcut: a legutóbbi 500 nyitott ticketet nézi, szóegyezéssel; ha kevés, pg_trgm vagy embedding kell."""
+    mine = _words(t)
+    if not mine:
+        return []
+    q = (select(Ticket).where(Ticket.id != t.id, Ticket.status.notin_(states.FINAL))
+         .order_by(Ticket.updated_at.desc()).limit(500))
+    out = []
+    for o in s.scalars(q):
+        other = _words(o)
+        score = len(mine & other) / len(mine | other) if other else 0
+        if score >= DUP_THRESHOLD:
+            out.append({"id": o.id, "title": o.title, "status": o.status, "project_id": o.project_id,
+                        "score": round(score, 2)})
+    return sorted(out, key=lambda x: -x["score"])[:limit]
+
+
+def merge_ticket(s, who: Principal, dup: Ticket, target_id: int, addition: str | None = None) -> Ticket:
+    """Szemantikus duplikátum összevonása: a meglévő ticket megkapja a forrásazonosítót és az új információt,
+    az új (NEW) ticket CANCELLED lesz. A forrás későbbi frissítései a meglévő tickethez futnak."""
+    if who.role not in ("coordinator", "dashboard"):
+        raise Forbidden("összevonást a Coordinator vagy ember végez")
+    if dup.status != "NEW":
+        raise Invalid(f"csak még be nem sorolt (NEW) ticket vonható össze (most: {dup.status})")
+    target = s.scalar(select(Ticket).where(Ticket.id == target_id).with_for_update())
+    if not target or target.id == dup.id:
+        raise Invalid("érvénytelen cél-ticket")
+    if target.status in states.FINAL:
+        raise Invalid(f"lezárt tickethez nem vonható össze (#{target.id}: {target.status})")
+    ref = None
+    if dup.source_id and dup.external_id:
+        ref = {"source_id": dup.source_id, "external_id": dup.external_id, "url": dup.source_url}
+        s.add(TicketSourceRef(ticket_id=target.id, merged_from_ticket_id=dup.id, **ref))
+        dup.external_id = None  # a forrás frissítései innentől a cél-tickethez futnak
+    for r in s.scalars(select(TicketSourceRef).where(TicketSourceRef.ticket_id == dup.id)):
+        r.ticket_id = target.id
+    addition = (addition or "").strip()
+    if addition:
+        label = f"#{dup.id}" + (f", {ref['source_id']} {ref['external_id']}" if ref else "")
+        target.description = f"{target.description or ''}\n\n---\nKiegészítés ({label}):\n{addition[:8000]}".lstrip()
+    target.updated_at = now()
+    s.flush()
+    event(s, target, who, "merged_in", payload={"from": dup.id, "title": dup.title, "source": ref,
+                                                "addition": addition[:2000] or None})
+    _move(s, dup, "CANCELLED", who, "merged", {"into": target.id})
+    changed(ticket=target.id)
+    return target
 
 
 def coordinator_pending(s) -> list[Ticket]:

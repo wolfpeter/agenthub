@@ -24,6 +24,8 @@ TRANSITIONS: dict[tuple[str, str], set[str]] = {
 for _s in STATUSES:
     if _s not in FINAL:
         TRANSITIONS.setdefault((_s, "CANCELLED"), set()).add("human")
+# szemantikus duplikátum: a Coordinator a még be nem sorolt ticketet összevonja egy meglévővel (SPECIFICATION 5)
+TRANSITIONS[("NEW", "CANCELLED")].add("coordinator")
 
 
 class TransitionError(ValueError):
