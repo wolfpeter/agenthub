@@ -324,6 +324,8 @@ def test_stale_worker_fenced_after_takeover(client, dash):
     w1.post(f"/api/tickets/{tid}/actions", {"target_system": "trello", "action_type": "comment", "payload": {"text": "x"}}, ok=409)
     Api(client, k).post(f"/api/tickets/{tid}/note", {"text": "fejléc nélkül"}, ok=409)
     assert dash.get(f"/api/tickets/{tid}")["status"] == "IN_PROGRESS"
+    assert nxt(w1).get("ticket") is None  # a régi példány nem veheti vissza, amíg B lease-e él
+    assert dash.get(f"/api/tickets/{tid}")["assigned_worker_id"] == "i2"
     w2.h["X-AgentHub-Lease"] = "old"
     w2.post(f"/api/tickets/{tid}/note", {"text": "rossz lease"}, ok=409)
     nxt(w2)  # ugyanaz a példány, érvényes lease: ugyanazt a lease-t kapja vissza
@@ -436,7 +438,7 @@ def test_semantic_duplicate_merged_into_existing(dash, coord, two_projects):
     first = ev("trk", external_id="T-1", title="A webshop kosár gomb nem működik mobilon", url="http://t/1")
     assert first["routed"]  # nincs hasonló: a szabály besorolja
     orig = first["created"][0]
-    dup = ev("mail", external_id="<m1>", title="Re: a webshop kosár gomb nem működik mobilon",
+    dup = ev("mail", external_id="<m1>", thread_id="<m1>", title="Re: a webshop kosár gomb nem működik mobilon",
              description="Androidon Chrome-ban is.")
     assert not dup["routed"]  # hasonló van: a Coordinator dönt, nem a szabály
     did = dup["created"][0]
@@ -450,6 +452,10 @@ def test_semantic_duplicate_merged_into_existing(dash, coord, two_projects):
     later = ev("mail", external_id="<m1>", title="Re: a webshop kosár gomb nem működik mobilon", description="Már iOS-en is.")
     assert later["created"] == [] and later["updated"] == [orig]
     assert dash.get(f"/api/tickets/{orig}")["title"] == "A webshop kosár gomb nem működik mobilon"  # másodlagos forrás nem írja felül
+    # ugyanabban a levélszálban érkező új levél (új azonosító) is a meglévő tickethez megy
+    reply = coord.post("/api/sources/mail/events", {"items": [{"external_id": "<m2>", "thread_id": "<m1>",
+                                                               "title": "Re: Re: kosár", "description": "még mindig"}]})
+    assert reply["created"] == [] and reply["updated"] == [orig]
     # lezárt ticketbe és nem NEW ticketet nem lehet összevonni
     coord.post(f"/api/tickets/{orig}/merge", {"into": did}, ok=400)
 
@@ -538,3 +544,12 @@ def test_cost_reported_estimated_or_unknown(dash, two_projects):
         runs.append(dash.get(f"/api/tickets/{t['id']}")["runs"][-1])
         dash.post(f"/api/tickets/{t['id']}/transition", {"action": "accept"})
     assert [(r["cost_source"], r["estimated_cost"]) for r in runs] == [("estimated", 4.5), ("reported", 0.42), ("unknown", None)]
+
+
+def test_network_guard_wired(dash):
+    from fastapi.testclient import TestClient
+    from agenthub.api.app import app
+    with TestClient(app, client=("8.8.8.8", 5000)) as public:
+        assert public.get("/api/health").status_code == 403
+    with TestClient(app, client=("100.110.55.26", 5000)) as tailnet:
+        assert tailnet.get("/api/health").status_code == 200

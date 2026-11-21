@@ -114,7 +114,7 @@ async def _forbidden(_, e):
 
 @app.exception_handler(sv.Conflict)
 async def _conflict(_, e):
-    return JSONResponse({"detail": str(e)}, 409)
+    return JSONResponse({"detail": str(e), "code": e.code}, 409)
 
 
 @app.exception_handler(sv.NotFound)

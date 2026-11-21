@@ -32,7 +32,9 @@ class Invalid(ValueError):
 
 
 class Conflict(Exception):
-    pass
+    def __init__(self, msg: str, code: str = "conflict"):
+        super().__init__(msg)
+        self.code = code  # lease_expired: a CLI magától visszakérheti; lease_lost: átvették, nem
 
 
 def phash(payload) -> str:
@@ -467,10 +469,12 @@ def next_ticket(s, who: Principal, instance_id: str, session_id: str | None = No
             cur.last_error = "megszakadt feldolgozás; a projekt beállítása szerint nem folytatódik automatikusan"
             _move(s, cur, "FAILED", SYSTEM, "interrupted")
             return None, False
-        same = cur.assigned_worker_id == instance_id and cur.lease_expires_at and cur.lease_expires_at > now()
-        if same:  # ugyanaz a Worker kérdez újra: nincs új esemény, csak a lease hosszabbodik
+        valid = bool(cur.lease_expires_at and cur.lease_expires_at > now())
+        if valid and cur.assigned_worker_id == instance_id:  # ugyanaz a Worker kérdez újra: csak a lease hosszabbodik
             cur.lease_expires_at = now() + timedelta(seconds=gc.lease_ttl_s)
             return cur, True
+        if valid:  # más példány érvényes lease-szel dolgozik rajta: nem vesszük el
+            return None, False
         old_lease = cur.current_lease_id
         cur.assigned_worker_id, cur.current_lease_id = instance_id, uuid.uuid4().hex
         cur.lease_expires_at = now() + timedelta(seconds=gc.lease_ttl_s)
@@ -501,9 +505,10 @@ def _fence(t: Ticket, instance_id: str | None, lease_id: str | None, check_expir
     """Csak az érvényes lease birtokosa írhat: példány + lease-azonosító + nem lejárt. Különben 409,
     és a Worker `agenthub worker wait`-tel kérje vissza a ticketet (ha senki nem vette át, új lease-szel visszakapja)."""
     if not instance_id or t.assigned_worker_id != instance_id or not lease_id or t.current_lease_id != lease_id:
-        raise Conflict(f"a #{t.id} ticketet nem ez a Worker-példány/lease tartja (átvették); kérj új ticketet: agenthub worker wait")
+        raise Conflict(f"a #{t.id} ticketet nem ez a Worker-példány/lease tartja (átvették); kérj új ticketet: agenthub worker wait",
+                       "lease_lost")
     if check_expiry and (not t.lease_expires_at or t.lease_expires_at <= now()):
-        raise Conflict(f"a #{t.id} ticket lease-e lejárt; kérd vissza: agenthub worker wait")
+        raise Conflict(f"a #{t.id} ticket lease-e lejárt; kérd vissza: agenthub worker wait", "lease_expired")
 
 
 def _own_in_progress(s, who: Principal, tid: int, instance_id: str | None, lease_id: str | None) -> Ticket:
@@ -920,6 +925,10 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
         if t is None and item.get("thread_id"):
             t = s.scalar(select(Ticket).where(Ticket.source_id == src.id, Ticket.thread_id == item["thread_id"])
                          .order_by(Ticket.id.desc()).limit(1))
+            if t is not None and t.status == "CANCELLED":  # a szál ticketjét összevonták: a válasz a célhoz megy
+                target = s.scalar(select(TicketSourceRef.ticket_id).where(TicketSourceRef.merged_from_ticket_id == t.id)
+                                  .limit(1))
+                t = s.get(Ticket, target) if target else t
         if t is not None:
             payload = {k: item.get(k) for k in ("title", "description", "url", "sender") if item.get(k)}
             if t.external_id == ext:  # ugyanaz az elem változott, nem egy szál új levele

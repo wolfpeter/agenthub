@@ -72,6 +72,7 @@ class Api:
         if instance:
             self.h["X-AgentHub-Instance"] = instance
         self.c = httpx.Client(base_url=api_url(), timeout=httpx.Timeout(30, read=90))
+        self.renew_lease = None  # Worker: lejárt (de át nem vett) lease magától visszakérhető
 
     def call(self, method, path, **kw):
         for attempt in range(4):  # átmeneti hiba: exponenciális visszalépés (SPECIFICATION 20)
@@ -87,10 +88,14 @@ class Api:
                 continue
             if r.status_code >= 400:
                 try:
-                    detail = r.json().get("detail")
+                    body = r.json()
                 except ValueError:
-                    detail = r.text[:300]
-                die(f"{r.status_code}: {detail}")
+                    body = {"detail": r.text[:300]}
+                if r.status_code == 409 and body.get("code") == "lease_expired" and self.renew_lease:
+                    renew, self.renew_lease = self.renew_lease, None  # egyszer próbáljuk
+                    if renew():
+                        return self.call(method, path, **kw)
+                die(f"{r.status_code}: {body.get('detail')}")
             return r.json() if "json" in r.headers.get("content-type", "") else r.text
         die("az API nem válaszol")
 
@@ -148,6 +153,17 @@ def worker_api(project: str) -> Api:
     api = Api(read_key(f"projects/{project}.key"), st.get("instance_id"))
     if st.get("lease_id"):  # fencing token: csak az aktuális lease birtokosa írhat a ticketre
         api.h["X-AgentHub-Lease"] = st["lease_id"]
+
+    def renew() -> bool:
+        """A lease a CLI dolga, nem a modellé (SPECIFICATION 6): hosszú munka után csendben visszakéri."""
+        r = api.get("/api/worker/next?wait=0")
+        if not r.get("ticket") or not r.get("lease_id"):
+            return False
+        cur = load_state(f"worker-{project}")
+        cur["lease_id"] = api.h["X-AgentHub-Lease"] = r["lease_id"]
+        save_state(f"worker-{project}", cur)
+        return True
+    api.renew_lease = renew
     return api
 
 
@@ -373,7 +389,7 @@ def cmd_worker(a):
         st = load_state(name)
         if not st.get("instance_id"):
             die("előbb: agenthub worker start")
-        timeout = a.timeout if a.timeout is not None else api.get("/api/worker/context")["wait_timeout_s"]
+        timeout = a.timeout if a.timeout is not None else api.get("/api/worker/context").get("wait_timeout_s", 540)
         end = time.time() + timeout
         while True:
             apply_file_actions(api, pid)

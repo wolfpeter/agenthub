@@ -262,3 +262,19 @@ def test_sse_stream_pushes_changes(env, server):
     cli.admin().post("/api/tickets", {"title": "SSE-teszt"})
     th.join(5)
     assert any(l.startswith("event: change") for l in got)
+
+
+def test_cli_renews_expired_lease_once(env, capsys, monkeypatch):
+    from sqlalchemy import text
+    from agenthub import db
+    home, proj = env
+    run(capsys, "project", "add", "--id", "demo", "--dir", str(proj))
+    monkeypatch.chdir(proj)
+    run(capsys, "worker", "start")
+    t = cli.admin().post("/api/tickets", {"title": "hosszú munka", "project_id": "demo", "start_approved": True})
+    run(capsys, "worker", "wait", "--timeout", "5")
+    first = cli.load_state("worker-demo")["lease_id"]
+    with db.session() as s:  # több mint egy óra jegyzet nélkül: lejárt, de senki nem vette át
+        s.execute(text("update tickets set lease_expires_at = now() - interval '1 minute' where id = :i"), {"i": t["id"]})
+    assert run(capsys, "ticket", "finish", str(t["id"]), "--summary", "kész")["status"] == "REVIEW"
+    assert cli.load_state("worker-demo")["lease_id"] != first
