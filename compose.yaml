@@ -2,10 +2,18 @@
 # A Claude Code agentek NEM innen indulnak: kézzel, látható terminálban.
 name: ${AGENTHUB_INSTANCE:-agenthub}
 
+# naplómegőrzés: konténerenként legfeljebb 5 × 10 MB (SPECIFICATION 19)
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
 services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: agenthub
       POSTGRES_DB: agenthub
@@ -20,6 +28,7 @@ services:
   api:
     build: .
     restart: unless-stopped
+    logging: *logging
     user: "${AGENTHUB_UID:-1000}:${AGENTHUB_GID:-1000}"
     depends_on:
       db:

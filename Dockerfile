@@ -18,4 +18,4 @@ COPY --from=ui /src/agenthub/static ./agenthub/static
 RUN uv sync --frozen --no-dev
 ENV PATH=/opt/venv/bin:$PATH HOME=/tmp
 EXPOSE 8000
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn agenthub.api.app:app --host 0.0.0.0 --port 8000 --proxy-headers"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn agenthub.api.app:app --host 0.0.0.0 --port 8000 --proxy-headers --no-access-log"]

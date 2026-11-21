@@ -745,7 +745,23 @@ def cmd_backup(a=None) -> Path:
     with os.fdopen(fd, "wb") as fh:
         fh.write(_fernet().encrypt(buf.getvalue()))
     print(f"mentés: {f}\n(titkosítva a secrets/backup.key kulccsal — azt külön, biztonságos helyen is őrizd meg)")
+    prune_backups(f)
     return f
+
+
+def prune_backups(keep: Path):
+    """global.retention_days: ennél régebbi mentések törlése; a mostani mindig marad. Üres = minden marad."""
+    try:
+        days = admin().get("/api/config/global")["current"].get("retention_days")
+    except Exception:  # API nélkül (pl. hibás frissítés közben) nem törlünk semmit
+        return
+    if not days:
+        return
+    limit = time.time() - days * 86400
+    for old in (home() / "backups").glob("agenthub-*.tar.gz.enc"):
+        if old != keep and old.stat().st_mtime < limit:
+            old.unlink()
+            print(f"régi mentés törölve ({days} napnál régebbi): {old.name}")
 
 
 def cmd_restore(a):

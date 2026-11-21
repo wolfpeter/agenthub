@@ -3,9 +3,11 @@ import asyncio
 import json
 import logging
 import os
+import re
 import threading
 from contextlib import asynccontextmanager
 import time
+import uuid
 from datetime import timedelta
 from pathlib import Path
 
@@ -23,6 +25,26 @@ from ..models import (TicketSourceRef, AgentInstance, AgentRun, Installation, Pe
                       Ticket, TicketAnswer, TicketEvent, TicketQuestion, now)
 
 log = logging.getLogger("agenthub")
+
+
+class _JsonLog(logging.Formatter):
+    """Strukturált backend-log (SPECIFICATION 19): egy JSON-sor eseményenként, korrelációs azonosítóval."""
+    def format(self, r):
+        d = {"ts": self.formatTime(r, "%Y-%m-%dT%H:%M:%S%z"), "level": r.levelname, "msg": secretstore.mask(r.getMessage())}
+        d.update(getattr(r, "ctx", {}))
+        return json.dumps(d, ensure_ascii=False)
+
+
+if not log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(_JsonLog())
+    log.addHandler(_h)
+    log.propagate = False
+log.setLevel(logging.INFO)
+
+
+def apply_log_level(level: str):
+    log.setLevel(getattr(logging, level, logging.INFO))
 COOKIE = "agenthub_key"
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
@@ -36,6 +58,30 @@ async def lifespan(_app):
 app = FastAPI(title="AgentHub", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json",
               lifespan=lifespan)
 
+
+
+_TICKET_PATH = re.compile(r"/api/tickets/(\d+)")
+
+
+@app.middleware("http")
+async def _request_log(request: Request, call_next):
+    rid = request.headers.get("x-request-id", "")[:64] or uuid.uuid4().hex[:12]
+    t0 = time.monotonic()
+    status = 500
+    try:
+        resp = await call_next(request)
+        status = resp.status_code
+        resp.headers["X-Request-ID"] = rid
+        return resp
+    finally:
+        if request.url.path.startswith("/api/"):
+            p = getattr(request.state, "principal", None)
+            m = _TICKET_PATH.match(request.url.path)
+            ctx = {"request_id": rid, "method": request.method, "path": request.url.path, "status": status,
+                   "ms": round((time.monotonic() - t0) * 1000), "actor": p.actor_id if p else None,
+                   "project_id": p.project_id if p else None, "ticket_id": int(m.group(1)) if m else None}
+            log.log(logging.WARNING if status >= 500 else logging.INFO if status >= 400 else logging.DEBUG,
+                    "request", extra={"ctx": ctx})
 
 
 @app.exception_handler(sv.Forbidden)
@@ -69,6 +115,7 @@ def _startup():
         for p in s.scalars(select(Project)):
             sv.sync_memory_files(s, p.id)
         pending = sv.recover_executions(s)
+        apply_log_level(sv.global_config(s).log_level)
     for aid in pending:  # újraindítás előtt jóváhagyott, de el nem indult műveletek
         _execute_async(aid)
 
@@ -87,6 +134,7 @@ def principal(request: Request) -> Principal:
         p = auth.lookup(s, key)
     if p is None:
         raise HTTPException(401, "hiányzó vagy érvénytelen kulcs")
+    request.state.principal = p  # a kérésnapló szereplője és projektje
     if via_cookie and request.method not in ("GET", "HEAD"):
         # CSRF: a cookie-s írásnak a saját originről kell jönnie
         origin = request.headers.get("origin")
@@ -832,6 +880,8 @@ def config_validate(scope: str, body: ConfigIn, p: Principal = Dash):
 def config_save(scope: str, body: ConfigIn, p: Principal = Dash):
     with db.session() as s:
         v = sv.save_config(s, p, scope, body.data, body.comment)
+        if scope == "global":
+            apply_log_level(v.config.get("log_level", "INFO"))
         created = scope == "project" and not s.scalar(select(func.count()).select_from(auth.ApiKey).where(
             auth.ApiKey.project_id == v.scope_id, auth.ApiKey.revoked_at.is_(None)))
         out = ser.row(v)

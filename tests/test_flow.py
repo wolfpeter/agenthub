@@ -493,3 +493,23 @@ def test_config_change_flags_restart_and_hooks(dash):
     assert "gamma" in r["restart_required"]
     g = dash.get("/api/config/global")["current"]
     assert dash.post("/api/config/global", {"data": {**g, "coordinator_model": "sonnet"}})["restart_required"]
+
+
+def test_request_log_has_correlation_fields(client, dash, caplog):
+    import json as _json
+    import logging
+    from agenthub.api import app as appmod
+    appmod.apply_log_level("DEBUG")
+    records = []
+    h = logging.Handler()
+    h.emit = records.append
+    appmod.log.addHandler(h)
+    try:
+        r = client.get("/api/tickets/999999", headers={**dash.h, "X-Request-ID": "abc123"})
+    finally:
+        appmod.log.removeHandler(h)
+        appmod.apply_log_level("INFO")
+    assert r.status_code == 404 and r.headers["x-request-id"] == "abc123"
+    ctx = next(x.ctx for x in records if getattr(x, "ctx", {}).get("request_id") == "abc123")
+    assert ctx["ticket_id"] == 999999 and ctx["status"] == 404 and ctx["actor"]
+    assert _json.loads(appmod._JsonLog().format(records[-1]))["request_id"] == "abc123"

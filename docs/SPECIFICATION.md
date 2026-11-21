@@ -463,7 +463,7 @@ Az agentek külön kulcsot kapnak: a Coordinator egy Coordinator-kulcsot, minden
 
 ## 19. Naplózás, költség és monitorozás
 
-Strukturált backend logok korrelációs azonosítóval, TicketId és ProjectId mezőkkel.
+Strukturált backend logok korrelációs azonosítóval, TicketId és ProjectId mezőkkel. Megvalósítás: soronként egy JSON-objektum (`request_id`, metódus, útvonal, státusz, idő, szereplő, `project_id`, `ticket_id`). A `request_id` a kérés `X-Request-ID` fejlécéből jön, vagy generált, és a válasz is visszaküldi. Szint: `global.log_level`; INFO szinten a hibás kérések, DEBUG szinten minden kérés naplózódik.
 
 Agent konzol normál módban csak rövid operatív sorokat mutat; részletes mód külön kapcsolható.
 
@@ -471,7 +471,7 @@ Dashboardon agentenként és ticketenként modell, tokenhasználat, becsült kö
 
 Heartbeat/lease monitorozás, elavult agent állapot, sikertelen ciklus és hibás adapter jelzése.
 
-Érzékeny adatok és tokenek maszkolása; log retention konfigurálható.
+Érzékeny adatok és tokenek maszkolása; log retention konfigurálható. Megvalósítás: a konténernaplók forgatottak (szolgáltatásonként legfeljebb 5 × 10 MB, `compose.yaml`). A `global.retention_days` a mentések megőrzési ideje: az `agenthub backup` az ennél régebbi mentéseket törli. A ticket- és auditesemények append-only jellegűek, ezért nem törlődnek.
 
 A token- és költségadatok csak akkor jelenjenek meg pontosként, ha a Claude Code vagy az integráció megbízhatóan szolgáltatja őket; egyébként becslésként és annak forrásával kell jelölni.
 

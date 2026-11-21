@@ -223,3 +223,19 @@ def test_worker_settings_include_project_hooks():
     st = cli.claude_settings({"id": "p", "config": {"worker": {"hooks": hooks}}}, [])
     assert st["hooks"] == hooks
     assert "hooks" not in cli.claude_settings({"id": "p", "config": {}}, [])
+
+
+def test_prune_backups_keeps_recent_and_current(env, monkeypatch):
+    home, _ = env
+    b = home / "backups"
+    b.mkdir()
+    old, recent, cur = (b / f"agenthub-{n}.tar.gz.enc" for n in ("old", "recent", "cur"))
+    for f in (old, recent, cur):
+        f.write_bytes(b"x")
+    os.utime(old, (time.time() - 40 * 86400,) * 2)
+    os.utime(cur, (time.time() - 40 * 86400,) * 2)  # a mostani mentés akkor is marad
+    admin = cli.admin()
+    g = admin.get("/api/config/global")["current"]
+    admin.post("/api/config/global", {"data": {**g, "retention_days": 30}})
+    cli.prune_backups(cur)
+    assert not old.exists() and recent.exists() and cur.exists()
