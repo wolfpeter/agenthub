@@ -133,7 +133,10 @@ function HeaderBoxes({ S, reload }: { S: State; reload: () => void }) {
       <div className="box"><h3>Koordinátor</h3>
         <div className="flex gap-2 items-center"><St alive={!!coord} control={cs} />
           <span className="text-mut">{coord ? ago(coord.last_heartbeat) : ''}</span>
-          <button className="btn" onClick={() => toggle('coordinator', 'a koordinátort', cs)}>{cs === 'stop' ? 'Engedélyez' : 'Leállít'}</button></div></div>
+          <button className="btn" onClick={() => toggle('coordinator', 'a koordinátort', cs)}>{cs === 'stop' ? 'Engedélyez' : 'Leállít'}</button></div>
+        {S.last_cycle && <div className="text-mut text-[12px]" title={S.last_cycle.errors.join('\n')}>
+          utolsó kör {hm(S.last_cycle.at)}: {S.last_cycle.sources_checked} forrás, {S.last_cycle.created} új, {S.last_cycle.updated} frissült, {S.last_cycle.pending} döntésre vár
+          {S.last_cycle.errors.length > 0 && <b className="text-bad"> · {S.last_cycle.errors.length} hiba</b>}</div>}</div>
       <div className="box"><h3>Workerek</h3>
         {S.projects.length === 0 && <span className="text-mut">nincs projekt</span>}
         {S.projects.map(p => {
@@ -143,6 +146,8 @@ function HeaderBoxes({ S, reload }: { S: State; reload: () => void }) {
               {S.projects.length > 1 && <span className="text-mut">{p.name}:</span>}
               <St alive={!!w} control={p.worker_control} />
               <span className="text-mut">{w ? `${w.active_ticket_id ? '#' + w.active_ticket_id : 'tétlen'} · ${ago(w.last_heartbeat)}` : ''}</span>
+              {p.monthly_budget_usd != null && <span className={p.over_budget ? 'text-bad font-semibold' : 'text-mut'} title="Havi költség a kerethez képest (becslés)">
+                ~${(p.month_cost_usd ?? 0).toFixed(2)} / ${p.monthly_budget_usd.toFixed(2)}{p.over_budget && ' · keret túllépve'}</span>}
               <button className="btn" onClick={() => toggle('worker:' + p.id, `a(z) ${p.name} workert`, p.worker_control)}>{p.worker_control === 'stop' ? 'Engedélyez' : 'Leállít'}</button>
             </div>)
         })}</div>

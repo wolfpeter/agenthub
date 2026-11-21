@@ -240,6 +240,7 @@ def create_ticket(s, who: Principal, data: dict) -> Ticket:
     prio = int(data.get("priority") or 2)
     if prio not in (1, 2, 3):
         raise Invalid("a prioritás 1, 2 vagy 3")
+    check_type(s, pid, data.get("type") or "task")
     t = Ticket(project_id=pid, title=title[:500], description=data.get("description") or "",
                type=data.get("type") or "task", priority=prio, status="NEW", source_url=data.get("source_url"),
                created_by=who.actor)
@@ -280,6 +281,16 @@ def set_go(s, who: Principal, t: Ticket, value: bool, reason: str | None = None)
     changed(ticket=t.id)
 
 
+def check_type(s, project_id: str | None, ttype: str | None):
+    """A projekt engedélyezett ticket-típusai (SPECIFICATION 12.1)."""
+    if not ttype or not project_id:
+        return
+    pr = s.get(Project, project_id)
+    allowed = project_config(pr).ticket_types if pr else []
+    if allowed and ttype not in allowed:
+        raise Invalid(f"a(z) {project_id} projektben nem engedélyezett típus: {ttype} (engedélyezett: {', '.join(allowed)})")
+
+
 def update_ticket(s, who: Principal, t: Ticket, data: dict):
     if who.role != "dashboard":
         raise Forbidden("csak a Dashboardról szerkeszthető")
@@ -293,6 +304,7 @@ def update_ticket(s, who: Principal, t: Ticket, data: dict):
             raise Invalid("a prioritás 1, 2 vagy 3")
         if p != t.priority:
             fields["priority"] = p
+    check_type(s, t.project_id, fields.get("type"))
     for k, v in fields.items():
         setattr(t, k, v)
     if fields:
@@ -350,6 +362,7 @@ def classify(s, who: Principal, t: Ticket, project_id: str | None, ttype: str | 
         return
     if not s.get(Project, project_id):
         raise Invalid(f"ismeretlen projekt: {project_id}")
+    check_type(s, project_id, t.type)
     t.project_id = project_id
     _move(s, t, "READY", who, "classified", {"project": project_id, "reason": reason})
     if go:
@@ -982,6 +995,11 @@ def merge_ticket(s, who: Principal, dup: Ticket, target_id: int, addition: str |
     _move(s, dup, "CANCELLED", who, "merged", {"into": target.id})
     changed(ticket=target.id)
     return target
+
+
+def last_cycle(s) -> dict | None:
+    e = s.scalar(select(AuditEvent).where(AuditEvent.action == "coordinator.cycle").order_by(AuditEvent.id.desc()).limit(1))
+    return {**(e.payload or {}), "at": e.created_at.isoformat()} if e else None
 
 
 def coordinator_pending(s) -> list[Ticket]:

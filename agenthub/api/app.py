@@ -186,9 +186,15 @@ def state(p: Principal = Dash):
     since = now() - timedelta(hours=24)
     with db.session() as s:
         gc = sv.global_config(s)
+        month_start = now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_cost = dict(s.execute(select(AgentRun.project_id, func.sum(AgentRun.estimated_cost))
+                                    .where(AgentRun.started_at >= month_start).group_by(AgentRun.project_id)).all())
         projects = []
         for pr in s.scalars(select(Project).order_by(Project.id)):
             d = ser.row(pr, exclude=("inventory", "config"))
+            budget = (pr.config or {}).get("monthly_budget_usd")
+            d["month_cost_usd"], d["monthly_budget_usd"] = month_cost.get(pr.id), budget
+            d["over_budget"] = bool(budget is not None and (month_cost.get(pr.id) or 0) >= budget)
             d["worker_control"] = sv.control_state(s, f"worker:{pr.id}")
             d["inventory_count"] = len((pr.inventory or {}).get("files", []))
             projects.append(d)
@@ -210,11 +216,19 @@ def state(p: Principal = Dash):
             PendingAction.status.notin_(sv.ACTION_TERMINAL) | (PendingAction.created_at >= since)).order_by(PendingAction.id))]
         knowledge = [ser.row(k) for k in s.scalars(select(ProjectKnowledge).where(ProjectKnowledge.status == "PROPOSED")
                                                    .order_by(ProjectKnowledge.id))]
+        run_stats = {r[0]: r[1:] for r in s.execute(
+            select(AgentRun.agent_instance_id, func.count(AgentRun.id), func.sum(AgentRun.tokens_in),
+                   func.sum(AgentRun.tokens_out), func.sum(AgentRun.estimated_cost),
+                   func.sum(func.extract("epoch", AgentRun.finished_at - AgentRun.started_at)))
+            .group_by(AgentRun.agent_instance_id)).all()}
         agents = []
         for a in s.scalars(select(AgentInstance).order_by(AgentInstance.last_heartbeat.desc())):
             if a.status == "running" or a.last_heartbeat >= since:
                 d = ser.row(a)
                 d["alive"] = sv.instance_alive(s, gc, a)
+                runs, tin, tout, cost, secs = run_stats.get(a.id, (0, None, None, None, None))
+                d["stats"] = {"runs": runs, "tokens_in": tin, "tokens_out": tout, "cost_usd": cost,
+                              "run_seconds": float(secs) if secs is not None else None}
                 agents.append(d)
         sources = [ser.row(x, exclude=("config",)) for x in s.scalars(select(Source).order_by(Source.id))]
         events = []
@@ -234,6 +248,7 @@ def state(p: Principal = Dash):
             "controls": {"coordinator": sv.control_state(s, "coordinator")},
             "usage_24h": {"runs": usage[0], "tokens_in": usage[1], "tokens_out": usage[2], "cost_usd": usage[3]},
             "coordinator_poll_interval_s": gc.coordinator_poll_interval_s,
+            "last_cycle": sv.last_cycle(s),
         }
 
 
@@ -498,6 +513,7 @@ def worker_context(p: Principal = Worker):
         mem = sv.memory_for(s, p)
         return {"project": sv.project_config(pr).model_dump(mode="json"),
                 "control": sv.control_state(s, f"worker:{p.project_id}"),
+                "wait_timeout_s": sv.global_config(s).worker_wait_timeout_s,
                 "memory": [{"id": k.id, "category": k.category, "title": k.title} for k in mem]}
 
 
@@ -739,6 +755,24 @@ def coordinator_context(request: Request, p: Principal = Coord):
                 "cli_executables": gc.cli_executables,
                 "sources": [ser.row(x) for x in s.scalars(select(Source).where(Source.is_active.is_(True)))],
                 "projects": [{"id": x.id, "name": x.name} for x in s.scalars(select(Project).where(Project.is_active.is_(True)))]}
+
+
+class CycleIn(BaseModel):
+    sources_checked: int = 0
+    created: int = 0
+    updated: int = 0
+    routed: int = 0
+    pending: int = 0
+    errors: list[str] = []
+
+
+@app.post("/api/coordinator/cycle")
+def coordinator_cycle(body: CycleIn, p: Principal = Coord):
+    """A ciklus rövid operatív összefoglalója (SPECIFICATION 5); a CLI küldi, modell nélkül."""
+    with db.session() as s:
+        sv.audit(s, p, "coordinator.cycle", "coordinator", None, body.model_dump())
+        sv.changed(what="cycle")
+    return {"ok": True}
 
 
 @app.get("/api/coordinator/pending")

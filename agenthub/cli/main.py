@@ -364,7 +364,8 @@ def cmd_worker(a):
         st = load_state(name)
         if not st.get("instance_id"):
             die("előbb: agenthub worker start")
-        end = time.time() + a.timeout
+        timeout = a.timeout if a.timeout is not None else api.get("/api/worker/context")["wait_timeout_s"]
+        end = time.time() + timeout
         while True:
             apply_file_actions(api, pid)
             left = int(end - time.time())
@@ -599,23 +600,28 @@ def cmd_coordinator(a):
                 out({"stop": True})
                 return
             next_due = end
+            cycle = {"sources_checked": 0, "created": 0, "updated": 0, "routed": 0, "errors": []}
             for src in ctx["sources"]:
                 if _due(src, time.time()):
+                    cycle["sources_checked"] += 1
                     try:
                         items, err = poll(src, ctx.get("cli_executables", [])), None
                     except (AdapterError, KeyError, ValueError) as e:
                         items, err = [], str(e)[:500]
                     r = api.post(f"/api/sources/{src['id']}/events", {"items": items, "error": err})
-                    totals["created"] += len(r["created"])
-                    totals["updated"] += len(r["updated"])
-                    totals["routed"] += len(r["routed"])
+                    for k in ("created", "updated", "routed"):
+                        cycle[k] += len(r[k])
+                        totals[k] += len(r[k])
                     if err:
+                        cycle["errors"].append(f"{src['id']}: {err}")
                         totals["errors"].append(f"{src['id']}: {err}")
                     next_due = min(next_due, time.time() + src["poll_interval_s"])
                 else:
                     last = datetime.fromisoformat(src["last_poll_at"]).timestamp()
                     next_due = min(next_due, last + src["poll_interval_s"])
             pending = api.get("/api/coordinator/pending")
+            if cycle["sources_checked"]:  # rövid ciklus-összefoglaló a Dashboardra (SPECIFICATION 5)
+                api.post("/api/coordinator/cycle", {**cycle, "pending": len(pending)})
             if pending:
                 out({"pending": [{"id": t["id"], "title": t["title"], "description": (t.get("description") or "")[:400],
                                   "source": t.get("source_id"), "url": t.get("source_url"),
@@ -859,7 +865,7 @@ def main(argv=None):
     r.add_argument("--takeover", action="store_true")
     r = xs.add_parser("wait")
     r.add_argument("--project")
-    r.add_argument("--timeout", type=int, default=540)
+    r.add_argument("--timeout", type=int, help="másodperc (alap: worker_wait_timeout_s)")
     r = xs.add_parser("stop")
     r.add_argument("--project")
     x.set_defaults(fn=cmd_worker)

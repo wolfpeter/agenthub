@@ -460,3 +460,24 @@ def test_similarity_ignores_unrelated_and_closed():
     a, b = N(title="A webshop kosár gomb nem működik", description=""), N(title="Új számlázási riport exportja", description="")
     wa, wb = sv._words(a), sv._words(b)
     assert len(wa & wb) / len(wa | wb) < sv.DUP_THRESHOLD
+
+
+def test_budget_agent_stats_cycle_and_ticket_types(dash, coord, two_projects):
+    wa, _ = two_projects
+    dash.post("/api/config/project", {"data": {"id": "alpha", "name": "ALPHA", "working_directory": "/srv/alpha",
+                                               "monthly_budget_usd": 1.0, "ticket_types": ["bug", "task"]}})
+    dash.post("/api/tickets", {"title": "x", "project_id": "alpha", "type": "feature"}, ok=400)  # nem engedélyezett típus
+    t = new(dash, start_approved=True)
+    nxt(wa)
+    wa.post(f"/api/tickets/{t['id']}/finish", {"summary": "kész", "run": {"model": "sonnet", "tokens_in": 1000,
+                                                                          "tokens_out": 100, "cost_usd": 1.5}})
+    st = dash.get("/api/state")
+    alpha = next(p for p in st["projects"] if p["id"] == "alpha")
+    assert alpha["month_cost_usd"] == 1.5 and alpha["over_budget"] is True
+    beta = next(p for p in st["projects"] if p["id"] == "beta")
+    assert beta["over_budget"] is False
+    stats = next(a for a in st["agents"] if a["id"] == "wa")["stats"]
+    assert stats["runs"] == 1 and stats["tokens_in"] == 1000 and stats["cost_usd"] == 1.5
+    assert st["last_cycle"] is None
+    coord.post("/api/coordinator/cycle", {"sources_checked": 2, "created": 1, "errors": ["x: hiba"]})
+    assert dash.get("/api/state")["last_cycle"]["sources_checked"] == 2
