@@ -204,7 +204,7 @@ M1–M5 fő funkciói stabilak.
 - [x] Frissítés előtt adatbázis- és konfigurációmentés.
 - [x] Backup/restore parancsok és dokumentáció.
 - [x] DB migrációk és frissítés utáni health check.
-- [x] Titkok maszkolása, Dashboard hozzáférés és hálózati beállítások hardeningje. (Nyilvános internetes címről alapból 403; strukturált kérésnapló, naplóforgatás.)
+- [x] Titkok maszkolása, Dashboard hozzáférés és hálózati beállítások hardeningje. (Nyilvános internetes címről alapból 403, tesztelve szimulált kliens-címmel; valódi nyilvános kliensről és felhős VM-en nincs mérve. Strukturált kérésnapló, naplóforgatás.)
 - [x] Alap logok, agent heartbeat, futási idő és becsült költség megjelenítése. (Agent nézet: futások, token, költség, futási idő; projektenként havi költség a kerethez képest.)
 - [x] Teszt: Worker megszakadása, lease lejárat, ticket folytatása és session fallback. (API-tesztek és `--resume` mérés; a fallback valódi sessionnel nincs mérve.)
 - [x] End-to-end teszt: forrás vagy manuális ticket → Coordinator → Worker → eredmény → Dashboard.
