@@ -355,15 +355,17 @@ def cmd_worker(a):
         sf = home() / "data" / "projects" / pid / "claude-settings.json"
         sf.parent.mkdir(parents=True, exist_ok=True)
         sf.write_text(json.dumps(claude_settings(p, projects), indent=2))
+        # a fő session csak vezényel (a ticketet alügynök viszi): a projekt modellje, különben a globális alapmodell
+        model = (p.get("config") or {}).get("worker", {}).get("model") or api.get("/api/config/global")["current"]["models"]["default"]
         running = api.get(f"/api/tickets?project={pid}&status=IN_PROGRESS")
         sess = running[0].get("claude_session_id") if running else None
         if sess:
             print(f"# Félbehagyott ticket: #{running[0]['id']} — a Claude-session folytatása:")
-            print(f"cd {p['working_directory']} && AGENTHUB_SESSION_ID={sess} claude --resume {sess} --settings {sf}")
+            print(f"cd {p['working_directory']} && AGENTHUB_SESSION_ID={sess} claude --resume {sess} --model {model} --settings {sf}")
             print("# ...majd a sessionben: /worker")
             print("# Ha a session nem folytatható, új session:")
         new = str(uuid.uuid4())
-        print(f"cd {p['working_directory']} && AGENTHUB_SESSION_ID={new} claude --session-id {new} --settings {sf}")
+        print(f"cd {p['working_directory']} && AGENTHUB_SESSION_ID={new} claude --session-id {new} --model {model} --settings {sf}")
         print("# ...majd a sessionben: /worker")
         return
 

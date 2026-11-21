@@ -106,7 +106,7 @@ def test_worker_command_settings_isolate_other_projects(env, capsys, monkeypatch
     run(capsys, "project", "add", "--id", "demo", "--dir", str(proj))
     run(capsys, "project", "add", "--id", "other", "--dir", str(other))
     lines = run(capsys, "worker", "command", "--project", "demo")
-    assert any("claude --session-id" in l and "--settings" in l for l in lines)
+    assert any("claude --session-id" in l and "--model sonnet --settings" in l for l in lines)  # globális alapmodell
     settings = json.loads((home / "data/projects/demo/claude-settings.json").read_text())
     deny = settings["permissions"]["deny"]
     assert f"Read(/{other}/**)" in deny and f"Read(/{home}/secrets/**)" in deny

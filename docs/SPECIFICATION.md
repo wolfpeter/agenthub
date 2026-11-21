@@ -83,7 +83,7 @@ A telepítő a végén egyszer kiírja a Dashboard-hozzáférési kulcsot és a 
 
 A Dashboard monitoroz és konfigurál, de nem indítja és nem állítja le a Claude Code agenteket. Nem használható tmux, screen, systemd vagy más process manager a Claude CLI sessionök automatikus háttérindítására. A felhasználó RDP-n vagy más interaktív terminálon keresztül indítja a megfelelő Claude CLI-t.
 
-Példa: az `agenthub coordinator command` és az `agenthub worker command --project <id>` kiírja a teljes indítóparancsot (`claude --session-id … --settings …`); a felhasználó ezt futtatja, majd a sessionben /coordinator, illetve /worker. A `--settings` fájl tartalmazza az agent engedélyeit és a projektizoláció tiltásait (lásd docs/M0-VALIDATION.md).
+Példa: az `agenthub coordinator command` és az `agenthub worker command --project <id>` kiírja a teljes indítóparancsot (`claude --session-id … --model … --settings …`; a Coordinatornál a `coordinator_model`, a Workernél a projekt `worker.model`-je, különben a globális `models.default`); a felhasználó ezt futtatja, majd a sessionben /coordinator, illetve /worker. A `--settings` fájl tartalmazza az agent engedélyeit és a projektizoláció tiltásait (lásd docs/M0-VALIDATION.md).
 
 ## 4. Architektúra
 
