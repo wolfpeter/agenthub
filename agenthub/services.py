@@ -130,8 +130,10 @@ def restart_notice(scope: str, scope_id: str, old: dict | None, new: dict) -> st
             return (f"A Worker jogosultságai változtak. Indítsd újra a(z) {scope_id} Worker Claude-sessionjét az "
                     f"`agenthub worker command --project {scope_id}` által kiírt paranccsal. Ha a könyvtár változott, "
                     "a többi projekt Workerét is.")
-    if scope == "global" and old.get("coordinator_model") != new.get("coordinator_model"):
-        return "A Coordinator modellje változott: az `agenthub coordinator command` paranccsal indítsd újra a sessiont."
+    if scope == "global" and any(old.get(k) != new.get(k) for k in (
+            "coordinator_model", "coordinator_allowed_tools", "coordinator_permission_mode")):
+        return ("A Coordinator modellje vagy jogosultságai változtak: az `agenthub coordinator command` paranccsal "
+                "indítsd újra a sessiont.")
     return None
 
 
@@ -233,6 +235,9 @@ def get_ticket(s, who: Principal, tid: int, lock=False) -> Ticket:
     return t
 
 
+REOPEN_FROM = ("REVIEW", "AWAITING_RELEASE", "COMPLETED", "BLOCKED", "FAILED")
+
+
 def _move(s, t: Ticket, new: str, who: Principal, etype="status", payload=None):
     old = t.status
     states.check(old, new, who.actor)
@@ -243,6 +248,10 @@ def _move(s, t: Ticket, new: str, who: Principal, etype="status", payload=None):
         if new != "PENDING_APPROVAL":  # ugyanabban a körben a lease birtokosa további műveletet javasolhat
             t.current_lease_id = None
         s.execute(update(AgentInstance).where(AgentInstance.active_ticket_id == t.id).values(active_ticket_id=None))
+    if t.hotfix and (new in states.FINAL or (new == "READY" and old in REOPEN_FROM)):
+        # a hotfix egy szállításra szóló élesítési engedély: lezárás vagy újranyitás után nem él tovább
+        t.hotfix, t.hotfix_by, t.hotfix_at = False, None, None
+        event(s, t, who, "hotfix_off", payload={"reason": f"{old} → {new}"})
     t.status, t.updated_at = new, now()
     event(s, t, who, etype, old, new, payload)
     s.flush()
@@ -298,6 +307,26 @@ def set_go(s, who: Principal, t: Ticket, value: bool, reason: str | None = None)
     t.updated_at = now()
     event(s, t, who, "go_on" if value else "go_off", payload={"reason": reason} if reason else None)
     audit(s, who, "ticket.go", "ticket", t.id, {"value": value, "reason": reason})
+    s.flush()
+    changed(ticket=t.id)
+
+
+def set_hotfix(s, who: Principal, t: Ticket, value: bool):
+    """Hotfix = élesítési engedély egy szállításra: csak ember adhatja, és Mehet + P1 jár vele."""
+    if who.role != "dashboard":
+        raise Forbidden("hotfixet csak ember jelölhet a Dashboardon")
+    if t.status in states.FINAL:
+        raise Invalid("lezárt ticket nem jelölhető hotfixnek")
+    if t.hotfix == value:
+        return
+    t.hotfix, t.hotfix_by, t.hotfix_at = value, (who.actor_id or who.actor) if value else None, now() if value else None
+    if value:
+        t.priority = 1
+        if not t.start_approved:
+            set_go(s, who, t, True)
+    t.updated_at = now()
+    event(s, t, who, "hotfix_on" if value else "hotfix_off")
+    audit(s, who, "ticket.hotfix", "ticket", t.id, {"value": value})
     s.flush()
     changed(ticket=t.id)
 
@@ -453,6 +482,19 @@ def stop_agent(s, who: Principal, instance_id: str):
         changed(what="agents")
 
 
+def _queue(project_id: str):
+    return (select(Ticket).where(Ticket.project_id == project_id, Ticket.status == "READY", Ticket.start_approved.is_(True))
+            .order_by(Ticket.hotfix.desc(), Ticket.priority, Ticket.id))
+
+
+def peek_ticket(s, who: Principal) -> Ticket | None:
+    """A következő jelölt lefoglalás nélkül (a helyi kapu, pl. kvótafigyelés ennek alapján dönt)."""
+    if who.role != "worker":
+        raise Forbidden("csak Worker")
+    return s.scalar(select(Ticket).where(Ticket.project_id == who.project_id, Ticket.status == "IN_PROGRESS")) \
+        or s.scalar(_queue(who.project_id).limit(1))
+
+
 def next_ticket(s, who: Principal, instance_id: str, session_id: str | None = None) -> tuple[Ticket | None, bool]:
     """Folytatandó vagy új ticket a saját projektből. Visszatér: (ticket, resumed)."""
     if who.role != "worker":
@@ -481,9 +523,7 @@ def next_ticket(s, who: Principal, instance_id: str, session_id: str | None = No
         _move(s, cur, "IN_PROGRESS", who, "resumed", {"previous_lease": old_lease, "instance": instance_id})
         _mark_active(s, instance_id, cur.id)
         return cur, True
-    t = s.scalar(select(Ticket).where(Ticket.project_id == who.project_id, Ticket.status == "READY",
-                                      Ticket.start_approved.is_(True))
-                 .order_by(Ticket.priority, Ticket.id).limit(1).with_for_update(skip_locked=True))
+    t = s.scalar(_queue(who.project_id).limit(1).with_for_update(skip_locked=True))
     if not t:
         return None, False
     t.assigned_worker_id, t.current_lease_id = instance_id, uuid.uuid4().hex
@@ -565,13 +605,112 @@ def answer(s, who: Principal, qid: int, text: str) -> TicketQuestion:
     return q
 
 
-def finish(s, who: Principal, tid: int, summary: str, payload: dict | None, run: dict | None, instance_id=None, lease_id=None):
+FINISH_TO = {"review": "REVIEW", "release": "AWAITING_RELEASE", "done": "COMPLETED"}
+
+
+def finish(s, who: Principal, tid: int, summary: str, payload: dict | None, run: dict | None, instance_id=None, lease_id=None,
+           to: str = "review"):
+    """review: ember veszi át · release: kész, élesítésre vár · done: kész (csak ha a projekt nem kér review-t)."""
     t = _own_in_progress(s, who, tid, instance_id, lease_id)
     if not summary.strip():
         raise Invalid("az eredmény összefoglalója kötelező")
+    if to not in FINISH_TO:
+        raise Invalid(f"ismeretlen lezárás: {to} (review, release, done)")
+    if to == "done" and project_config(s.get(Project, t.project_id)).worker.review_required:
+        raise Invalid("ebben a projektben a lezárást ember veszi át: --to review vagy release")
     t.result_summary, t.result_payload, t.last_error = summary.strip(), payload, None
-    _record_run(s, who, t, run, "review", instance_id)
-    _move(s, t, "REVIEW", who, "finished", {"summary": summary.strip()[:2000]})
+    _record_run(s, who, t, run, to, instance_id)
+    _move(s, t, FINISH_TO[to], who, "finished", {"summary": summary.strip()[:2000], "to": to})
+
+
+def block(s, who: Principal, tid: int, reason: str, instance_id=None, lease_id=None):
+    """Harmadik félre vár (megrendelő, külső fél). Emberi döntéshez a kérdés (ask) való."""
+    t = _own_in_progress(s, who, tid, instance_id, lease_id)
+    if not reason.strip():
+        raise Invalid("meg kell adni, mire vár")
+    t.last_error = reason.strip()
+    _move(s, t, "BLOCKED", who, "blocked", {"reason": reason.strip()[:2000]})
+
+
+def release_list(s, who: Principal) -> list[Ticket]:
+    if who.role != "worker":
+        raise Forbidden("csak a projekt kulcsával")
+    return list(s.scalars(select(Ticket).where(Ticket.project_id == who.project_id, Ticket.status == "AWAITING_RELEASE")
+                          .order_by(Ticket.hotfix.desc(), Ticket.priority, Ticket.id)))
+
+
+def release_done(s, who: Principal, tid: int, summary: str):
+    """Élesítés után: lease nélkül, mert a kiadás nem egy ticket feldolgozása."""
+    if who.role != "worker":
+        raise Forbidden("csak a projekt kulcsával")
+    t = get_ticket(s, who, tid, lock=True)
+    if t.status != "AWAITING_RELEASE":
+        raise Invalid(f"a #{tid} ticket nem élesítésre vár (most: {t.status})")
+    if not summary.strip():
+        raise Invalid("az élesítés eredménye kötelező")
+    t.result_summary = f"{t.result_summary or ''}\n\nÉlesítve: {summary.strip()}".strip()
+    _move(s, t, "COMPLETED", who, "released", {"summary": summary.strip()[:2000]})
+
+
+def coordinator_act(s, who: Principal, t: Ticket, action: str, reason: str | None = None, priority: int | None = None,
+                    title: str | None = None):
+    """A Coordinator döntései egy meglévő ticketen, a forrás új bemenete alapján."""
+    if who.role != "coordinator":
+        raise Forbidden("csak a Coordinator")
+    reason = (reason or "").strip()
+    if priority is not None and priority not in (1, 2, 3):
+        raise Invalid("a prioritás 1, 2 vagy 3")
+    if action in ("reopen", "done", "dismiss") and not reason:
+        raise Invalid("indoklás kötelező")
+    if action != "note" and (priority or title):
+        if t.status in states.FINAL and action != "reopen":
+            raise Invalid("lezárt ticket csak újranyitással módosítható")
+        if priority:
+            t.priority = priority
+        if title:
+            t.title = title.strip()[:500]
+        event(s, t, who, "edited", payload={k: v for k, v in (("priority", priority), ("title", title)) if v})
+    if action == "reopen":
+        if t.status not in REOPEN_FROM:
+            raise Invalid(f"a #{t.id} ticket nem nyitható újra (most: {t.status})")
+        t.last_error = None
+        _move(s, t, "READY", who, "reopened", {"reason": reason})
+    elif action == "done":
+        _move(s, t, "COMPLETED", who, "answered", {"summary": reason})
+        t.result_summary = reason
+    elif action == "dismiss":
+        _move(s, t, "CANCELLED", who, "dismissed", {"reason": reason})
+    elif action == "note":
+        if not reason:
+            raise Invalid("üres megjegyzés")
+        event(s, t, who, "note", payload={"text": reason[:4000]})
+    elif action != "set":
+        raise Invalid(f"ismeretlen művelet: {action}")
+    t.updated_at = now()
+    s.flush()
+    changed(ticket=t.id)
+
+
+def coordinator_updates(s, after: int | None, limit: int = 50) -> dict:
+    """A forrás új bemenetei meglévő ticketeken (komment, válaszlevél, listaváltás). after=None: csak a kurzor."""
+    last = s.scalar(select(func.max(TicketEvent.id))) or 0
+    if after is None:
+        return {"cursor": last, "updates": []}
+    rows = list(s.execute(select(TicketEvent, Ticket).join(Ticket, Ticket.id == TicketEvent.ticket_id)
+                          .where(TicketEvent.id > after, TicketEvent.event_type == "source_update")
+                          .order_by(TicketEvent.id).limit(limit)))
+    ups = []
+    for e, t in rows:
+        p = e.payload or {}
+        if not p.get("notify"):
+            continue
+        ups.append({"ticket": t.id, "title": t.title, "status": t.status, "project": t.project_id, "priority": t.priority,
+                    "source": t.source_id, "url": t.source_url, "list": p.get("list"), "list_from": p.get("list_from"),
+                    "labels": p.get("labels"), "labels_from": p.get("labels_from"), "sender": p.get("sender"),
+                    "thread_reply": bool(p.get("thread_reply")), "applied": p.get("applied") or [],
+                    "comments": (p.get("comments") or "")[-1500:] or None,
+                    "description": (p.get("description") or "")[:600] if p.get("thread_reply") else None})
+    return {"cursor": rows[-1][0].id if rows else after, "updates": ups}
 
 
 def fail(s, who: Principal, tid: int, error: str, run: dict | None = None, instance_id=None, lease_id=None):
@@ -874,6 +1013,9 @@ SOURCE_FIELDS = {"title": ("title", 500), "description": ("description", None), 
 def _source_desc(item: dict) -> str:
     """A forráselemből képzett leírás: a forrás leírása és a legutóbbi kommentjei (SPECIFICATION 5)."""
     desc = item.get("description") or ""
+    tags = [f"{n}: {item[k]}" for n, k in (("Lista", "list"), ("Címkék", "labels")) if item.get(k)]
+    if tags:
+        desc = f"[{' · '.join(tags)}]\n\n{desc}".rstrip()
     if item.get("comments"):
         desc = f"{desc}\n\n---\nKommentek a forrásban:\n{item['comments']}".lstrip()
     return desc
@@ -940,11 +1082,20 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
                                   .limit(1))
                 t = s.get(Ticket, target) if target else t
         if t is not None:
-            payload = {k: item.get(k) for k in ("title", "description", "url", "sender") if item.get(k)}
-            if item.get("comments") and item.get("comments") != (prev or {}).get("comments"):
+            payload = {k: item.get(k) for k in ("title", "description", "url", "sender", "list", "labels") if item.get(k)}
+            p0 = prev or {}
+            if item.get("comments") and item.get("comments") != p0.get("comments"):
                 payload["comments"] = item["comments"]  # új komment: az eseménytörténetbe, a leírást nem írja át
+            for k in ("list", "labels"):
+                if prev is not None and (item.get(k) or "") != (p0.get(k) or ""):
+                    payload[f"{k}_from"] = p0.get(k)
             if t.external_id == ext:  # ugyanaz az elem változott, nem egy szál új levele
-                payload.update(_apply_source_fields(t, prev or {}, item))
+                payload.update(_apply_source_fields(t, p0, item))
+            else:
+                payload["thread_reply"] = True
+            # a Coordinator döntést igénylő változás: új komment vagy levél, lista- vagy címkeváltás, tartalmi módosítás
+            payload["notify"] = bool(payload.get("comments") or payload.get("thread_reply") or payload.get("applied")
+                                     or "list_from" in payload or "labels_from" in payload)
             event(s, t, who, "source_update", payload=payload)
             t.updated_at = now()
             out["updated"].append(t.id)
@@ -954,7 +1105,8 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
                        created_by="coordinator", status="NEW")
             s.add(t)
             s.flush()
-            event(s, t, who, "created", None, "NEW", {"source": src.id, "sender": item.get("sender")})
+            event(s, t, who, "created", None, "NEW", {"source": src.id, "sender": item.get("sender"),
+                                                       **{k: item[k] for k in ("list", "labels") if item.get(k)}})
             similar = similar_tickets(s, t)
             if similar:  # szemantikus egyezés gyanúja: a Coordinator dönt, nem a szabály
                 event(s, t, who, "possible_duplicate", payload={"similar": similar})

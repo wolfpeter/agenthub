@@ -297,3 +297,60 @@ def test_compose_cmd_includes_local_override(env):
     assert "compose.override.yaml" not in " ".join(cli.compose_cmd())
     (home / "compose.override.yaml").write_text("services: {}\n")
     assert cli.compose_cmd()[-2:] == ["-f", str(home / "compose.override.yaml")]
+
+
+def test_worker_gate_holds_work_without_lease(env, capsys, monkeypatch, tmp_path):
+    home, proj = env
+    run(capsys, "project", "add", "--id", "demo", "--dir", str(proj))
+    monkeypatch.chdir(proj)
+    run(capsys, "worker", "start")
+    admin = cli.admin()
+    gate = tmp_path / "gate.py"
+    gate.write_text("import json,sys\nt=json.load(sys.stdin)\nif t['priority']>1:\n print('5 órás keret 92%')\n sys.exit(10)\n")
+    g = admin.get("/api/config/global")["current"]
+    g["worker_gate_command"] = ["python3", str(gate)]
+    admin.post("/api/config/global", {"data": g})
+    t = admin.post("/api/tickets", {"title": "ráér", "project_id": "demo", "priority": 2, "start_approved": True})
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    assert run(capsys, "worker", "wait", "--timeout", "1") == {"idle": True, "gate": "5 órás keret 92%"}
+    assert admin.get(f"/api/tickets/{t['id']}")["status"] == "READY"  # nincs lefoglalva
+    admin.call("PATCH", f"/api/tickets/{t['id']}", json={"priority": 1})
+    assert run(capsys, "worker", "wait", "--timeout", "5")["ticket"]["id"] == t["id"]
+    assert run(capsys, "ticket", "finish", str(t["id"]), "--summary", "UAT-on", "--to", "release")["status"] == "AWAITING_RELEASE"
+    assert run(capsys, "release", "list")["awaiting_release"][0]["id"] == t["id"]
+    assert run(capsys, "release", "done", str(t["id"]), "--summary", "v2 kint")["status"] == "COMPLETED"
+
+
+def test_coordinator_wait_reports_updates_once(env, capsys):
+    home, proj = env
+    run(capsys, "project", "add", "--id", "demo", "--dir", str(proj))
+    admin = cli.admin()
+    g = admin.get("/api/config/global")["current"]
+    g["cli_executables"] = ["python3"]
+    g["coordinator_instructions"] = "Júlia levele P1."
+    g["coordinator_allowed_tools"] = ["mcp__trello__write"]
+    g["coordinator_permission_mode"] = "bypassPermissions"
+    admin.post("/api/config/global", {"data": g})
+    data = home / "items.json"
+    data.write_text('[{"id":"K1","t":"Kártya","l":"Backlog"}]')
+    admin.post("/api/config/source", {"data": {"id": "trk", "name": "T", "adapter_type": "cli", "project": "demo",
+                                               "poll_interval_s": 60, "settings": {
+        "executable": "python3", "args": ["-c", f"print(open('{data}').read())"],
+        "fields": {"external_id": "id", "title": "t", "list": "l"}}}})
+    run(capsys, "coordinator", "command")
+    st = json.loads((home / "data/coordinator-settings.json").read_text())
+    assert "mcp__trello__write" in st["permissions"]["allow"] and st["permissions"]["defaultMode"] == "bypassPermissions"
+    assert run(capsys, "coordinator", "start")["instructions"] == "Júlia levele P1."
+    assert run(capsys, "coordinator", "wait", "--timeout", "2")["idle"] is True  # új kártya: szabály szerint besorolva
+    data.write_text('[{"id":"K1","t":"Kártya","l":"Review / UAT"}]')
+    from agenthub import db
+    from agenthub.models import Source
+    with db.session() as s:
+        s.get(Source, "trk").last_poll_at = None  # a következő wait azonnal lekérdez
+    r = run(capsys, "coordinator", "wait", "--timeout", "2")
+    assert r["updates"][0]["list"] == "Review / UAT" and r["updates"][0]["list_from"] == "Backlog"
+    with db.session() as s:
+        s.get(Source, "trk").last_poll_at = None
+    assert run(capsys, "coordinator", "wait", "--timeout", "1")["idle"] is True  # egyszer adja ki
+    tid = r["updates"][0]["ticket"]
+    assert run(capsys, "coordinator", "set", str(tid), "--priority", "1")["priority"] == 1

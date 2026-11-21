@@ -1,7 +1,7 @@
 """Ticket-állapotgép (SPECIFICATION 8.0). A táblában nem szereplő átmenet tilos."""
 
-STATUSES = ("NEW", "READY", "IN_PROGRESS", "WAITING_FOR_INPUT", "PENDING_APPROVAL", "REVIEW", "COMPLETED",
-            "FAILED", "CANCELLED", "NEEDS_TRIAGE")
+STATUSES = ("NEW", "READY", "IN_PROGRESS", "WAITING_FOR_INPUT", "PENDING_APPROVAL", "BLOCKED", "REVIEW",
+            "AWAITING_RELEASE", "COMPLETED", "FAILED", "CANCELLED", "NEEDS_TRIAGE")
 FINAL = {"COMPLETED", "CANCELLED"}
 
 # (honnan, hová) -> engedélyezett szereplők. Szereplők: human, coordinator, worker, system.
@@ -18,8 +18,21 @@ TRANSITIONS: dict[tuple[str, str], set[str]] = {
     ("WAITING_FOR_INPUT", "READY"): {"system"},
     ("PENDING_APPROVAL", "READY"): {"system"},
     ("REVIEW", "COMPLETED"): {"human"},
-    ("REVIEW", "READY"): {"human"},
-    ("FAILED", "READY"): {"human", "system"},
+    ("FAILED", "READY"): {"human", "system", "coordinator"},
+    # harmadik félre vár (megrendelő, külső szolgáltató); új bemenetre a Coordinator vagy ember újranyitja
+    ("IN_PROGRESS", "BLOCKED"): {"worker"},
+    ("BLOCKED", "READY"): {"human", "coordinator"},
+    # kész, de még nincs élesítve: a kiadás után a Worker (release-folyamat) vagy ember zárja
+    ("IN_PROGRESS", "AWAITING_RELEASE"): {"worker"},
+    ("AWAITING_RELEASE", "COMPLETED"): {"worker", "human"},
+    ("AWAITING_RELEASE", "READY"): {"human", "coordinator"},
+    # emberi átvétel nélküli lezárás: csak ha a projekt nem kér review-t (worker.review_required: false)
+    ("IN_PROGRESS", "COMPLETED"): {"worker"},
+    # a Coordinator a forrás új bemenetére újranyit, a csak válaszos tételt maga zárja
+    ("REVIEW", "READY"): {"human", "coordinator"},
+    ("COMPLETED", "READY"): {"human", "coordinator"},
+    ("NEW", "COMPLETED"): {"coordinator"},
+    ("READY", "COMPLETED"): {"coordinator"},
 }
 for _s in STATUSES:
     if _s not in FINAL:

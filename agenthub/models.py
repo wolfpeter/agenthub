@@ -92,6 +92,10 @@ class Ticket(Base):
     start_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     start_approved_by: Mapped[str | None] = mapped_column(String(30))
     start_approved_reason: Mapped[str | None] = mapped_column(Text)
+    # Hotfix: csak ember jelöli; a Worker elsőként veszi fel, a projekt utasítása szerint teszt után azonnal élesít
+    hotfix: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    hotfix_by: Mapped[str | None] = mapped_column(String(30))
+    hotfix_at: Mapped[datetime | None] = mapped_column(TS)
     source_id: Mapped[str | None] = mapped_column(ForeignKey("sources.id"))
     external_id: Mapped[str | None] = mapped_column(String(500))
     thread_id: Mapped[str | None] = mapped_column(String(500))

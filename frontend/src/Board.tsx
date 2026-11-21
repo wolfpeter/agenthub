@@ -9,7 +9,8 @@ const COLS: { key: string; title: string; st: string[]; fold?: boolean }[] = [
   { key: 'wip', title: 'Folyamatban', st: ['IN_PROGRESS'] },
   { key: 'wait', title: 'Rád vár', st: ['WAITING_FOR_INPUT', 'PENDING_APPROVAL'] },
   { key: 'review', title: 'Ellenőrzésre vár', st: ['REVIEW'] },
-  { key: 'blocked', title: 'Blokkolt', st: ['FAILED'] },
+  { key: 'release', title: 'Release-re vár', st: ['AWAITING_RELEASE'] },
+  { key: 'blocked', title: 'Blokkolt / hiba', st: ['BLOCKED', 'FAILED'] },
   { key: 'done', title: 'Kész (24 óra)', st: ['COMPLETED', 'CANCELLED'], fold: true },
 ]
 const GO_STATES = ['READY', 'NEW', 'NEEDS_TRIAGE']
@@ -86,6 +87,9 @@ function Card({ t, proj, onOpen }: { t: Ticket; proj: string | null; onOpen: (id
       <div className="flex flex-wrap gap-1.5 mt-1 text-[12px] text-mut items-center">
         <span className="font-semibold" style={{ color: PCOL[t.priority] }} title="Prioritás">P{t.priority}</span>
         {proj && <span className="tag">{proj}</span>}<span className="tag">{t.type}</span>
+        {t.hotfix && <span className="tag text-bad" style={{ borderColor: 'var(--bad)' }} title="Teszt után azonnal élesítendő">HOTFIX</span>}
+        {t.status === 'BLOCKED' && <span className="tag" title={t.last_error ?? ''}>külső félre vár</span>}
+        {t.status === 'FAILED' && <span className="tag text-bad" title={t.last_error ?? ''}>hiba</span>}
         {t.status === 'NEEDS_TRIAGE' && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>besorolás kell</span>}
         {t.status === 'PENDING_APPROVAL' && <span className="tag">jóváhagyásra vár</span>}
         {t.status === 'WAITING_FOR_INPUT' && <span className="tag">kérdés</span>}

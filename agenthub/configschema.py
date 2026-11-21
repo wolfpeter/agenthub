@@ -51,6 +51,13 @@ class GlobalConfig(Strict):
     routing_rules: list[RoutingRule] = Field(default_factory=list)
     retention_days: int | None = Field(default=None, ge=1)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # A Coordinator telepítésre szabott része (a Worker projektenkénti beállításának megfelelője)
+    coordinator_instructions: str = ""
+    coordinator_allowed_tools: list[str] = Field(default_factory=list)
+    coordinator_permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "default"
+    # Helyi kapu a Worker elé (pl. kvótafigyelés): a jelölt ticket JSON-ját stdin-en kapja; 0 = mehet,
+    # más kilépési kód = most ne vegyen fel munkát (a stdout első sora az ok)
+    worker_gate_command: list[str] = Field(default_factory=list)
 
 
 class WorkerConfig(Strict):
@@ -62,6 +69,8 @@ class WorkerConfig(Strict):
     allowed_tools: list[str] = Field(default_factory=list)
     hooks: dict = Field(default_factory=dict)  # Claude Code settings `hooks` blokk, változatlanul a Worker settings-fájljába
     instructions: str = ""
+    # false: a Worker maga zárhatja a ticketet (COMPLETED) emberi átvétel nélkül
+    review_required: bool = True
 
 
 class ProjectConfig(Strict):
@@ -105,7 +114,7 @@ class CliAdapterConfig(Strict):
     def _fields(cls, v):
         if "external_id" not in v or "title" not in v:
             raise ValueError("a 'fields' mezőben kötelező az external_id és a title hozzárendelése")
-        allowed = {"external_id", "title", "description", "url", "thread_id", "sender", "updated_at"}
+        allowed = {"external_id", "title", "description", "url", "thread_id", "sender", "updated_at", "list", "labels"}
         bad = set(v) - allowed
         if bad:
             raise ValueError(f"ismeretlen mező(k): {sorted(bad)}")

@@ -27,7 +27,7 @@ export const patch = <T = any>(u: string, b: unknown) => api<T>('PATCH', u, b)
 // ---- típusok (csak a használt mezők)
 export interface Ticket {
   id: number; project_id: string | null; title: string; description: string; type: string; priority: number
-  status: string; start_approved: boolean; start_approved_by: string | null; start_approved_reason: string | null
+  status: string; hotfix: boolean; hotfix_by: string | null; start_approved: boolean; start_approved_by: string | null; start_approved_reason: string | null
   source_url: string | null; created_at: string; updated_at: string; last_error: string | null
   result_summary: string | null; lease_stale?: boolean; retry_count: number; created_by?: string; assigned_worker_id: string | null
 }
@@ -63,6 +63,7 @@ export const hm = (iso?: string | null) => iso ? new Date(iso).toLocaleString('h
 export const num = (n: number | null | undefined) => n == null ? '—' : n.toLocaleString('hu-HU')
 export const STATUS_HU: Record<string, string> = {
   NEW: 'Új', NEEDS_TRIAGE: 'Besorolásra vár', READY: 'Indítható', IN_PROGRESS: 'Folyamatban', WAITING_FOR_INPUT: 'Válaszra vár',
-  PENDING_APPROVAL: 'Jóváhagyásra vár', REVIEW: 'Ellenőrzésre vár', COMPLETED: 'Kész', FAILED: 'Blokkolt', CANCELLED: 'Megszakítva',
+  PENDING_APPROVAL: 'Jóváhagyásra vár', REVIEW: 'Ellenőrzésre vár', AWAITING_RELEASE: 'Release-re vár', COMPLETED: 'Kész',
+  BLOCKED: 'Blokkolt (külső félre vár)', FAILED: 'Hiba', CANCELLED: 'Megszakítva',
 }
 export const FINAL = ['COMPLETED', 'CANCELLED']

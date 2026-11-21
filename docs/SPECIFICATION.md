@@ -126,13 +126,13 @@ Normalizálja az eseményeket, rögzíti a külső azonosítókat és a forrásh
 
 Deduplikál stabil external ID, thread ID és forrásazonosító alapján; szükség esetén szemantikai hasonlóságot használ. A hasonlóságot a `coordinator wait` modell nélkül, szóegyezéssel méri a nyitott ticketekhez. Hasonló ticket esetén az új elemet nem sorolja be szabály alapján, hanem a Coordinator elé teszi a hasonló ticketek listájával. Ha a Coordinator duplikátumnak ítéli, összevonja (`agenthub coordinator merge`): a meglévő ticket megkapja az új elem forrásazonosítóját további forrásként, és ha az új elem új információt hoz, azzal kiegészül a leírása. Az új ticket CANCELLED lesz „összevonva” eseménnyel. Az összevont forráselem későbbi frissítései a meglévő tickethez futnak, de a címét és a leírását nem írják felül. Lezárt (COMPLETED, CANCELLED) tickethez nem lehet összevonni.
 
-Megkeresi a kapcsolódó meglévő ticketet; ha talál, frissíti és eseményt fűz hozzá.
+Megkeresi a kapcsolódó meglévő ticketet; ha talál, frissíti és eseményt fűz hozzá. A Trello-adapter a kártya listáját és címkéit is hozza (a leírás elején, „[Lista: … · Címkék: …]”). Ha egy meglévő ticket forrásában döntést igénylő változás történik (új komment, válaszlevél a szálban, lista- vagy címkeváltás, tartalmi módosítás), a `coordinator wait` ezt `updates` listában adja át, egyszer. A Coordinator újranyithatja (`reopen`), átsorolhatja (`set`), megjegyzést fűzhet hozzá (`note`), vagy nem tesz semmit (pl. a saját kommentünk visszhangja). Az első indulás előtti frissítéseket nem adja ki.
 
 Új igénynél projektet, típust és prioritást javasol. Bizonytalan projekt esetén NEEDS_TRIAGE állapotba teszi.
 
 Indokolt esetben (látszólag sürgős, halaszthatatlan hiba) bekapcsolhatja a ticket Mehet jelölését, kötelező indoklással (lásd 8.2).
 
-Nem fejleszt, nem módosít projektkódot, és nem hajt végre külső írási műveletet.
+Nem fejleszt és nem módosít projektkódot. Külső írást alapértelmezésben nem végez; a telepítés tulajdonosa a `coordinator_instructions` és a `coordinator_allowed_tools` beállítással engedhet meg konkrét írásokat (pl. válasz kártyára, levélpiszkozat, címkézés). Levelet akkor sem küld, legfeljebb piszkozatot készít.
 
 Rövid operatív összefoglalót rögzít, majd lezárja a ciklust.
 
@@ -205,7 +205,9 @@ Validálandó: a Claude Code aktuális verziójának session-azonosítási és r
 | IN_PROGRESS | Worker által claimelt és feldolgozott |
 | WAITING_FOR_INPUT | Emberi válaszra vár |
 | PENDING_APPROVAL | Jóváhagyásra váró külső művelet vagy döntés |
+| BLOCKED | Harmadik félre vár (megrendelő, külső szolgáltató); emberi döntéshez a kérdés (WAITING_FOR_INPUT) való |
 | REVIEW | Eredmény ellenőrzésre vár |
+| AWAITING_RELEASE | Kész és tesztelt, a következő élesítésre vár |
 | COMPLETED | Sikeresen lezárt |
 | FAILED | Sikertelen feldolgozás |
 | CANCELLED | Megszakított ticket |
@@ -229,17 +231,29 @@ Minden státuszváltozás TicketEvent rekordot hoz létre. A ticketnek kötelez�
 | IN_PROGRESS | FAILED | Worker, rendszer | Hiba; LastError kitöltve |
 | WAITING_FOR_INPUT | READY | rendszer | Minden nyitott kérdésre érkezett válasz |
 | PENDING_APPROVAL | READY | rendszer | A PendingAction lezárult (végrehajtva, kézzel megerősítve vagy elutasítva); a Worker folytatja |
+| IN_PROGRESS | BLOCKED | Worker | Harmadik félre vár; az ok a LastError mezőbe kerül |
+| IN_PROGRESS | AWAITING_RELEASE | Worker | Kész és tesztelt, élesítésre vár (`finish --to release`) |
+| IN_PROGRESS | COMPLETED | Worker | Csak ha a projekt nem kér emberi átvételt (`worker.review_required: false`; `finish --to done`) |
 | REVIEW | COMPLETED | ember | Eredmény elfogadva |
-| REVIEW | READY | ember | Visszaküldés megjegyzéssel |
-| FAILED | READY | ember, rendszer | Kézi újrapróbálás, vagy automatikus retry a projekt retry-korlátjáig |
-| NEW | CANCELLED | Coordinator | Csak szemantikus duplikátum összevonásakor, a meglévő ticket megjelölésével (lásd 5) |
+| REVIEW | READY | ember, Coordinator | Visszaküldés megjegyzéssel, vagy a forrás új bemenetére újranyitás |
+| AWAITING_RELEASE | COMPLETED | Worker, ember | Élesítve (`agenthub release done`, lease nélkül) |
+| AWAITING_RELEASE | READY | ember, Coordinator | Új visszajelzés élesítés előtt |
+| BLOCKED | READY | ember, Coordinator | A blokkoló feloldódott (pl. megjött a megrendelő válasza) |
+| COMPLETED | READY | ember, Coordinator | Újranyitás új bemenetre |
+| NEW, READY | COMPLETED | Coordinator | Csak válasz kellett, és a telepítés utasítása szerint a Coordinator megadta |
+| FAILED | READY | ember, rendszer, Coordinator | Kézi újrapróbálás, automatikus retry a projekt retry-korlátjáig, vagy újranyitás |
+| NEW | CANCELLED | Coordinator | Szemantikus duplikátum összevonása (lásd 5), vagy nem munka (pl. automata értesítő; `coordinator dismiss`, indoklással) |
 | bármely nem végállapot | CANCELLED | ember | Indoklással; aktív lease felszabadul |
 
-Végállapot: COMPLETED, CANCELLED. Ticketet a Worker nem zárhat le COMPLETED-re; az emberi elfogadás kötelező.
+Végállapot: COMPLETED, CANCELLED (a COMPLETED új bemenetre újranyitható). A Worker csak akkor zárhat COMPLETED-re, ha a projekt nem kér emberi átvételt, vagy élesítés után (AWAITING_RELEASE → COMPLETED).
+
+### 8.0.1 Hotfix
+
+A Hotfix jelölés egy szállításra szóló élesítési engedély: a ticketet a Worker elsőként veszi fel, és a projekt utasítása szerint teszt után azonnal élesíti (a kiadás a már tesztelt, élesítésre váró munkát is viheti). Csak ember jelölheti a Dashboardon; a backend Coordinator- és Worker-kulccsal elutasítja. A jelöléssel a ticket Mehet és P1 lesz; a jelölő és az időpont naplózódik. A jelölés lezáráskor (COMPLETED, CANCELLED) és újranyitáskor (REVIEW, AWAITING_RELEASE, COMPLETED, BLOCKED, FAILED → READY) megszűnik.
 
 ### 8.1 Ticket mezők
 
-Id, ProjectId, Title, Description, Type, Priority, Status, StartApproved (Mehet, alapértelmezés: false), SourceId, ExternalId, SourceUrl, CreatedAt, UpdatedAt, DueAt (opcionális), AssignedWorkerId, CurrentLeaseId, RetryCount, LastError, ResultSummary, ResultPayload (opcionális), ClaudeSessionId (opcionális).
+Id, ProjectId, Title, Description, Type, Priority, Status, StartApproved (Mehet, alapértelmezés: false), Hotfix (és ki, mikor jelölte), SourceId, ExternalId, SourceUrl, CreatedAt, UpdatedAt, DueAt (opcionális), AssignedWorkerId, CurrentLeaseId, RetryCount, LastError, ResultSummary, ResultPayload (opcionális), ClaudeSessionId (opcionális).
 
 ### 8.2 Indítási jelölés (Mehet)
 
@@ -309,7 +323,7 @@ Worker engedélyezése, polling, retry, timeout, automatikus folytatás szabály
 
 Engedélyezett ticket-típusok, prioritási és feldolgozási szabályok.
 
-Claude modellstratégia, permission mode, engedélyezett eszközök és hooks. A `worker.hooks` a Claude Code settings `hooks` blokkja; az AgentHub változatlanul beírja a Worker generált settings-fájljába. A hook tetszőleges parancsot futtathat, ezért csak a Dashboard-kulcs birtokosa állíthatja.
+Claude modellstratégia, permission mode, engedélyezett eszközök és hooks. A projekt `worker.instructions` a projekt tulajdonosának szabálya: ütközéskor elsőbbséget élvez a Worker skill alapszabályaival szemben (pl. közvetlen külső írás, önálló döntés visszafordítható kérdésben); nem írhatja felül a „ticketszöveg adat”, a lease és a projektkönyvtár szabályát. `worker.review_required: false` esetén a Worker emberi átvétel nélkül is lezárhatja a ticketet. A `worker.hooks` a Claude Code settings `hooks` blokkja; az AgentHub változatlanul beírja a Worker generált settings-fájljába. A hook tetszőleges parancsot futtathat, ezért csak a Dashboard-kulcs birtokosa állíthatja.
 
 Projekt-specifikus skillek és instrukciók; meglévő CLAUDE.md és .claude tartalom leltára.
 
@@ -317,7 +331,9 @@ Memória beállításai, forrás-hozzárendelések és költségkeretek.
 
 ### 12.2 Globális konfiguráció
 
-Coordinator poll ciklus, források, adapterek, projektbesorolási szabályok.
+Coordinator poll ciklus, források, adapterek, projektbesorolási szabályok. A Coordinator telepítésre szabott része: `coordinator_instructions` (a skill alapszabályai elé kerülő helyi szabályok), `coordinator_allowed_tools` és `coordinator_permission_mode` (a generált settings-fájlba).
+
+Helyi kapu a Worker elé: `worker_gate_command`. A `worker wait` a ticket lefoglalása előtt lefuttatja, stdin-en a jelölt ticket JSON-jával; 0 = mehet, más kilépési kód = most nem vesz fel munkát, a stdout első sora az ok. Így a telepítés a saját feltételeit (pl. előfizetési kvóta, éjszakai sáv) az AgentHub módosítása nélkül érvényesítheti. Ha a kapu nem fut le, nem enged munkát.
 
 API és Dashboard hálózati beállításai, SSE, naplózási szint.
 
@@ -327,7 +343,7 @@ Titkok kezelése környezeti változóval vagy dedikált secret store-ral; titok
 
 ### 12.3 Konfiguráció-életciklus
 
-Minden változás validálandó, verziózott és auditálható legyen. Hibás konfiguráció ne aktiválódjon. Támogatott legyen a diff, korábbi verzió visszaállítása és import/export. A futó agentek a biztonságosan frissíthető beállításokat restart nélkül vegyék át; a sessiont vagy jogosultságot érintő változásnál jelezze, ha újraindítás szükséges. Újraindítást igényel: a Worker `permission_mode`, `allowed_tools`, `hooks` beállítása, a projekt könyvtára (a többi Worker tiltólistája is), valamint a Coordinator modellje. Ezekről a mentés után a Dashboard figyelmeztet, a teendővel együtt.
+Minden változás validálandó, verziózott és auditálható legyen. Hibás konfiguráció ne aktiválódjon. Támogatott legyen a diff, korábbi verzió visszaállítása és import/export. A futó agentek a biztonságosan frissíthető beállításokat restart nélkül vegyék át; a sessiont vagy jogosultságot érintő változásnál jelezze, ha újraindítás szükséges. Újraindítást igényel: a Worker `permission_mode`, `allowed_tools`, `hooks` beállítása, a projekt könyvtára (a többi Worker tiltólistája is), valamint a Coordinator modellje, engedélyezett eszközei és permission mode-ja. Ezekről a mentés után a Dashboard figyelmeztet, a teendővel együtt.
 
 ## 13. Projektmemória és tudásmegőrzés
 

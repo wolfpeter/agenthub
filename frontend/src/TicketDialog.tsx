@@ -52,6 +52,10 @@ export default function TicketDialog({ id, S, onClose }: { id: number; S: State;
           {['READY', 'NEW', 'NEEDS_TRIAGE'].includes(st) && (
             <label className="flex gap-1 items-center"><input type="checkbox" checked={d.start_approved} onChange={e => run(() => post(`/api/tickets/${id}/go`, { value: e.target.checked })).then(reload)} /> Mehet
               {d.start_approved_by === 'coordinator' && <b className="text-warn" title={d.start_approved_reason ?? ''}> · Coordinator pipálta: {d.start_approved_reason}</b>}</label>)}
+          {!final && (
+            <label className="flex gap-1 items-center" title="Élesítési engedély erre a szállításra: a worker elsőként veszi fel, és teszt után azonnal kiadja">
+              <input type="checkbox" checked={d.hotfix} onChange={e => run(() => post(`/api/tickets/${id}/hotfix`, { value: e.target.checked })).then(reload)} /> Hotfix
+              {d.hotfix && d.hotfix_by && <span className="text-mut"> · {d.hotfix_by}</span>}</label>)}
         </div>
       </div>
 
@@ -66,13 +70,14 @@ export default function TicketDialog({ id, S, onClose }: { id: number; S: State;
               <select className="inp !w-auto" aria-label="Projekt" value={triageProj || d.project_id || ''} onChange={e => setTriageProj(e.target.value)}>
                 <option value="">— projekt —</option>{S.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
               <button className="btn ok" disabled={!(triageProj || d.project_id)} onClick={() => tr('triage', 'Besorolva', { project_id: triageProj || d.project_id })}>Besorol (Indítható)</button></>}
-            {st === 'REVIEW' && <>
+            {(st === 'REVIEW' || st === 'AWAITING_RELEASE') && <>
               <button className="btn ok" onClick={() => tr('accept', 'Elfogadva')}>Elfogad</button>
               <button className="btn" disabled={!note.trim()} title={note.trim() ? '' : 'A visszaküldéshez megjegyzés kell'} onClick={() => tr('return', 'Visszaküldve')}>Visszaküld</button></>}
             {st === 'FAILED' && <button className="btn ok" onClick={() => tr('retry', 'Újrapróbálás indul')}>Újrapróbál</button>}
+            {st === 'BLOCKED' && <button className="btn ok" onClick={() => tr('retry', 'Feloldva')}>Feloldva (Indítható)</button>}
             <button className="btn bad" onClick={async () => { if (await confirm(`Megszakítod a(z) #${id} feladatot?`)) tr('cancel', 'Megszakítva') }}>Megszakít</button>
           </div>
-          {st === 'REVIEW' && <input className="inp mt-2" placeholder="Megjegyzés (visszaküldéshez kötelező)" value={note} onChange={e => setNote(e.target.value)} />}
+          {(st === 'REVIEW' || st === 'AWAITING_RELEASE') && <input className="inp mt-2" placeholder="Megjegyzés (visszaküldéshez kötelező)" value={note} onChange={e => setNote(e.target.value)} />}
         </Sec>)}
 
       {d.questions.length > 0 && <Sec t="Kérdések">{d.questions.map(q => <Q key={q.id} q={q} onDone={reload} />)}</Sec>}

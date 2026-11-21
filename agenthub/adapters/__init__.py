@@ -116,11 +116,16 @@ def _adf_text(node) -> str:
 def run_trello(cfg, client=None) -> list[dict]:
     c = client or httpx.Client(timeout=60)
     params = {"key": secretstore.get(cfg.key_secret), "token": secretstore.get(cfg.token_secret),
-              "fields": "name,desc,shortUrl,shortLink,idList,dateLastActivity",
+              "fields": "name,desc,shortUrl,shortLink,idList,labels,dateLastActivity",
               "actions": "commentCard", "actions_limit": MAX_COMMENTS}
     r = c.get(f"https://api.trello.com/1/boards/{cfg.board_id}/cards", params=params)
     if r.status_code >= 300:
         raise AdapterError(f"Trello {r.status_code}")
+    lr = c.get(f"https://api.trello.com/1/boards/{cfg.board_id}/lists",
+               params={"key": params["key"], "token": params["token"], "fields": "name"})
+    if lr.status_code >= 300:
+        raise AdapterError(f"Trello {lr.status_code}")
+    names = {x["id"]: x.get("name") for x in lr.json()}
     out = []
     for card in r.json():
         if cfg.lists and card.get("idList") not in cfg.lists:
@@ -130,7 +135,9 @@ def run_trello(cfg, client=None) -> list[dict]:
         comments = _comments([((x.get("memberCreator") or {}).get("fullName"), x.get("date"), (x.get("data") or {}).get("text"))
                               for x in acts if x.get("type") == "commentCard"])
         out.append({"external_id": card.get("shortLink") or card["id"], "title": card.get("name"), "description": card.get("desc") or "",
-                    "url": card.get("shortUrl"), "updated_at": card.get("dateLastActivity"), "comments": comments})
+                    "url": card.get("shortUrl"), "updated_at": card.get("dateLastActivity"), "comments": comments,
+                    "list": names.get(card.get("idList")),
+                    "labels": ", ".join(x.get("name") or x.get("color") or "" for x in card.get("labels") or []) or None})
     return out
 
 

@@ -312,7 +312,7 @@ def cmd_project(a):
 
 # ---------------------------------------------------------------- Worker
 
-AGENT_COMMANDS = {"worker": ("worker", "ticket", "memory"), "coordinator": ("coordinator",)}
+AGENT_COMMANDS = {"worker": ("worker", "ticket", "memory", "release"), "coordinator": ("coordinator",)}
 ADMIN_COMMANDS = ("init", "welcome", "up", "doctor", "key", "project", "worker command", "coordinator command",
                   "source", "config", "skills", "backup", "restore", "update")
 
@@ -398,6 +398,13 @@ def cmd_worker(a):
         end = time.time() + timeout
         while True:
             apply_file_actions(api, pid)
+            gate = _gate(api)
+            if gate:  # a helyi kapu (pl. kvóta) most nem enged munkát: várunk, lefoglalás nélkül
+                if time.time() + 60 >= end:
+                    out({"idle": True, "gate": gate})
+                    return
+                time.sleep(60)
+                continue
             left = int(end - time.time())
             r = api.get(f"/api/worker/next?wait={max(0, min(left, 50))}"
                         + (f"&session={st['session_id']}" if st.get("session_id") else ""))
@@ -414,6 +421,20 @@ def cmd_worker(a):
     if a.action == "stop":
         api.post("/api/agents/stop")
         out({"stopped": True})
+
+
+def _gate(api: Api) -> str | None:
+    """worker_gate_command: a jelölt ticket JSON-ja stdin-en; 0 = mehet, más = ne most (stdout első sora az ok)."""
+    pk = api.get("/api/worker/peek")
+    if not pk.get("gate") or not pk.get("ticket"):
+        return None
+    try:
+        p = subprocess.run(pk["gate"], input=json.dumps(pk["ticket"]), capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"a kapu nem futott: {type(e).__name__}"  # hibás kapu = nem engedünk (biztonságos irány)
+    if p.returncode == 0:
+        return None
+    return (p.stdout.strip().splitlines() or [f"kapu: kilépési kód {p.returncode}"])[0][:300]
 
 
 def inventory(wd: str) -> dict:
@@ -546,8 +567,12 @@ def cmd_ticket(a):
         out({"question_id": q["id"], "status": "WAITING_FOR_INPUT"})
     elif a.action == "finish":
         payload = json.loads(_text(a.payload_json)) if a.payload_json else None
-        api.post(f"/api/tickets/{tid}/finish", {"summary": _text(a.summary), "payload": payload, "run": _run(a)})
-        out({"ok": True, "status": "REVIEW"})
+        r = api.post(f"/api/tickets/{tid}/finish", {"summary": _text(a.summary), "payload": payload, "run": _run(a),
+                                                    "to": a.to})
+        out({"ok": True, "status": r["status"]})
+    elif a.action == "block":
+        api.post(f"/api/tickets/{tid}/block", {"reason": _text(a.reason)})
+        out({"ok": True, "status": "BLOCKED"})
     elif a.action == "fail":
         api.post(f"/api/tickets/{tid}/fail", {"error": _text(a.error), "run": _run(a)})
         out({"ok": True})
@@ -567,6 +592,18 @@ def cmd_ticket(a):
         r = api.post(f"/api/tickets/{tid}/actions", {"target_system": "file", "action_type": "edit",
                                                      "target_reference": payload["path"], "payload": payload})
         out({"action_id": r["id"], "status": r["status"]})
+
+
+def cmd_release(a):
+    """Élesítés: a release-re váró ticketek listája és lezárása (lease nélkül; a projekt kulcsával)."""
+    pid = project_for_cwd(a.project)
+    api = Api(read_key(f"projects/{pid}.key"))
+    if a.action == "list":
+        out({"awaiting_release": [{k: t.get(k) for k in ("id", "title", "priority", "hotfix", "source_url", "result_summary")}
+                                  for t in api.get("/api/release")]})
+    else:
+        api.post(f"/api/tickets/{a.id}/released", {"summary": _text(a.summary)})
+        out({"id": a.id, "status": "COMPLETED"})
 
 
 def cmd_memory(a):
@@ -598,10 +635,13 @@ def _due(src: dict, now: float) -> bool:
 def cmd_coordinator(a):
     if a.action == "command":
         allow, deny = _agent_rules("coordinator")
+        gc = admin().get("/api/config/global")["current"]
+        perms = {"allow": [*allow, *gc.get("coordinator_allowed_tools", [])], "deny": deny}
+        if gc.get("coordinator_permission_mode", "default") != "default":
+            perms["defaultMode"] = gc["coordinator_permission_mode"]
         sf = home() / "data" / "coordinator-settings.json"
         sf.parent.mkdir(parents=True, exist_ok=True)
-        sf.write_text(json.dumps({"permissions": {"allow": allow, "deny": deny},
-                                  "env": {"AGENTHUB_ROLE": "coordinator"}}, indent=2))
+        sf.write_text(json.dumps({"permissions": perms, "env": {"AGENTHUB_ROLE": "coordinator"}}, indent=2))
         sid = str(uuid.uuid4())
         print(f"cd {home()} && AGENTHUB_SESSION_ID={sid} claude --session-id {sid} --settings {sf}")
         print("# ...majd a sessionben: /coordinator")
@@ -616,8 +656,12 @@ def cmd_coordinator(a):
         api.post("/api/agents/register", {"instance_id": st["instance_id"], "session_id": st["session_id"],
                                           "working_directory": os.getcwd(), "takeover": a.takeover})
         ctx = api.get("/api/coordinator/context")
+        if "updates_cursor" not in st:  # első indulás: a korábbi forrásfrissítések nem új bemenetek
+            st["updates_cursor"] = api.get("/api/coordinator/updates")["cursor"]
+            save_state("coordinator", st)
         out({"instance": st["instance_id"], "control": ctx["control"], "model": ctx["model"],
-             "sources": [x["id"] for x in ctx["sources"]], "projects": ctx["projects"]})
+             "sources": [x["id"] for x in ctx["sources"]], "projects": ctx["projects"],
+             "instructions": ctx.get("instructions")})
         return
     api = coord_api()
     if a.action == "wait":
@@ -650,12 +694,19 @@ def cmd_coordinator(a):
                     last = datetime.fromisoformat(src["last_poll_at"]).timestamp()
                     next_due = min(next_due, last + src["poll_interval_s"])
             pending = api.get("/api/coordinator/pending")
+            st = load_state("coordinator")
+            ups = api.get(f"/api/coordinator/updates?after={st.get('updates_cursor', 0)}")
             if cycle["sources_checked"]:  # rövid ciklus-összefoglaló a Dashboardra (SPECIFICATION 5)
-                api.post("/api/coordinator/cycle", {**cycle, "pending": len(pending)})
-            if pending:
-                out({"pending": [{"id": t["id"], "title": t["title"], "description": (t.get("description") or "")[:400],
-                                  "source": t.get("source_id"), "url": t.get("source_url"),
-                                  **({"similar": t["similar"]} if t.get("similar") else {})} for t in pending],
+                api.post("/api/coordinator/cycle", {**cycle, "pending": len(pending) + len(ups["updates"])})
+            if ups["cursor"] != st.get("updates_cursor"):
+                st["updates_cursor"] = ups["cursor"]  # a kimenet a modellé; újra nem adjuk ki
+                save_state("coordinator", st)
+            if pending or ups["updates"]:
+                out({**({"pending": [{"id": t["id"], "title": t["title"], "description": (t.get("description") or "")[:400],
+                                      "source": t.get("source_id"), "url": t.get("source_url"),
+                                      **({"similar": t["similar"]} if t.get("similar") else {})} for t in pending]}
+                        if pending else {}),
+                     **({"updates": ups["updates"]} if ups["updates"] else {}),
                      "projects": ctx["projects"], "ingested": totals})
                 return
             if time.time() >= end:
@@ -673,6 +724,11 @@ def cmd_coordinator(a):
     elif a.action == "go":
         t = api.post(f"/api/tickets/{a.id}/go", {"value": True, "reason": a.reason})
         out({"id": t["id"], "go": t["start_approved"]})
+    elif a.action in ("reopen", "set", "done", "dismiss", "note"):
+        t = api.post(f"/api/tickets/{a.id}/coordinator", {"action": a.action, "reason": _text(getattr(a, "reason", None)),
+                                                          "priority": getattr(a, "priority", None),
+                                                          "title": getattr(a, "title", None)})
+        out({"id": t["id"], "status": t["status"], "priority": t["priority"]})
     elif a.action == "stop":
         api.post("/api/agents/stop")
         out({"stopped": True})
@@ -937,12 +993,16 @@ def main(argv=None):
         if name == "finish":
             r.add_argument("--summary", required=True)
             r.add_argument("--payload-json")
+            r.add_argument("--to", default="review", choices=["review", "release", "done"],
+                           help="review: ember veszi át · release: kész, élesítésre vár · done: kész (ha a projekt engedi)")
         else:
             r.add_argument("--error", required=True)
         r.add_argument("--model")
         r.add_argument("--tokens-in", type=int)
         r.add_argument("--tokens-out", type=int)
         r.add_argument("--cost-usd", type=float)
+    r = tparser("block", help="harmadik félre vár (megrendelő, külső fél)")
+    r.add_argument("--reason", required=True)
     r = tparser("action", help="külső írási javaslat (jóváhagyásra vár)")
     r.add_argument("--target", required=True, choices=["email", "jira", "trello"])
     r.add_argument("--type", required=True)
@@ -952,6 +1012,16 @@ def main(argv=None):
     r.add_argument("--path", required=True)
     r.add_argument("--new-content-file", required=True)
     x.set_defaults(fn=cmd_ticket)
+
+    x = sub.add_parser("release", help="élesítés: release-re váró ticketek")
+    xs = x.add_subparsers(dest="action", required=True)
+    r = xs.add_parser("list")
+    r.add_argument("--project")
+    r = xs.add_parser("done", help="élesítve: a ticket lezárása")
+    r.add_argument("id", type=int)
+    r.add_argument("--summary", required=True)
+    r.add_argument("--project")
+    x.set_defaults(fn=cmd_release)
 
     x = sub.add_parser("memory", help="projektmemória")
     xs = x.add_subparsers(dest="action", required=True)
@@ -988,6 +1058,15 @@ def main(argv=None):
     r.add_argument("id", type=int)
     r.add_argument("--into", type=int, required=True)
     r.add_argument("--add", help="új információ a meglévő tickethez ('-' = stdin, '@fájl')")
+    for name, hlp in (("reopen", "újranyitás új bemenetre (REVIEW/AWAITING_RELEASE/COMPLETED/BLOCKED/FAILED → READY)"),
+                      ("set", "prioritás vagy cím módosítása"), ("done", "kész munka nélkül (pl. megválaszolt kérdés)"),
+                      ("dismiss", "nem munka (pl. automata levél): NEW → CANCELLED"), ("note", "megjegyzés a tickethez")):
+        r = xs.add_parser(name, help=hlp)
+        r.add_argument("id", type=int)
+        r.add_argument("--reason", required=name != "set", help="indoklás vagy szöveg ('-' = stdin, '@fájl')")
+        if name in ("reopen", "set"):
+            r.add_argument("--priority", type=int, choices=[1, 2, 3])
+            r.add_argument("--title")
     xs.add_parser("stop")
     x.set_defaults(fn=cmd_coordinator)
 

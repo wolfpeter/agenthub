@@ -574,3 +574,82 @@ def test_new_source_comment_refreshes_ticket(dash, coord):
     assert "második" in t["description"]
     ev = [e for e in t["events"] if e["event_type"] == "source_update"][-1]["payload"]
     assert "második" in ev["comments"] and ev["applied"] == ["description"]
+
+
+# ------------------------------------------------------------ release-ciklus, blokkolt, hotfix, Coordinator-frissítések
+
+def test_release_cycle_block_and_self_complete(dash, two_projects):
+    wa, _ = two_projects
+    t = new(dash, start_approved=True)
+    nxt(wa)
+    wa.post(f"/api/tickets/{t['id']}/finish", {"summary": "kész", "to": "done"}, ok=400)  # review kötelező
+    wa.post(f"/api/tickets/{t['id']}/finish", {"summary": "UAT-on", "to": "release"})
+    assert [x["id"] for x in wa.get("/api/release")] == [t["id"]]
+    wa.post(f"/api/tickets/{t['id']}/released", {"summary": "v1.2 prodon mérve"})  # lease nélkül
+    d = dash.get(f"/api/tickets/{t['id']}")
+    assert d["status"] == "COMPLETED" and "v1.2" in d["result_summary"]
+    wa.post(f"/api/tickets/{t['id']}/released", {"summary": "x"}, ok=400)
+
+    b = new(dash, start_approved=True)
+    nxt(wa)
+    wa.post(f"/api/tickets/{b['id']}/block", {"reason": "a megrendelő anyagára vár"})
+    assert dash.get(f"/api/tickets/{b['id']}")["status"] == "BLOCKED"
+    assert nxt(wa) == {"idle": True}
+
+    cfg = dash.get("/api/config/project/alpha")["current"]
+    cfg["worker"]["review_required"] = False
+    dash.post("/api/config/project", {"data": cfg})
+    c = new(dash, start_approved=True)
+    nxt(wa)
+    wa.post(f"/api/tickets/{c['id']}/finish", {"summary": "megválaszolva", "to": "done"})
+    assert dash.get(f"/api/tickets/{c['id']}")["status"] == "COMPLETED"
+
+
+def test_hotfix_human_only_first_in_queue_and_voided(dash, coord, two_projects):
+    wa, _ = two_projects
+    first = new(dash, priority=1, start_approved=True)
+    hot = new(dash, priority=3)
+    wa.post(f"/api/tickets/{hot['id']}/hotfix", {"value": True}, ok=403)
+    coord.post(f"/api/tickets/{hot['id']}/hotfix", {"value": True}, ok=403)
+    dash.post(f"/api/tickets/{hot['id']}/hotfix", {"value": True})
+    d = dash.get(f"/api/tickets/{hot['id']}")
+    assert d["hotfix"] and d["start_approved"] and d["priority"] == 1 and d["hotfix_by"]
+    assert wa.get("/api/worker/peek")["ticket"]["id"] == hot["id"]
+    assert nxt(wa)["ticket"]["id"] == hot["id"] and first["id"] != hot["id"]
+    wa.post(f"/api/tickets/{hot['id']}/finish", {"summary": "UAT ok", "to": "release"})
+    assert wa.get("/api/release")[0]["hotfix"] is True
+    coord.post(f"/api/tickets/{hot['id']}/coordinator", {"action": "reopen", "reason": "új hibajelzés"})
+    assert dash.get(f"/api/tickets/{hot['id']}")["hotfix"] is False  # újranyitás után nem él az engedély
+
+
+def test_coordinator_gets_source_updates_and_acts(dash, coord, two_projects):
+    wa, _ = two_projects
+    g = dash.get("/api/config/global")["current"]
+    g["cli_executables"] = ["echo"]
+    dash.post("/api/config/global", {"data": g})
+    dash.post("/api/config/source", {"data": {"id": "trk", "name": "T", "adapter_type": "cli", "project": "alpha",
+                                              "settings": {"executable": "echo", "fields": {"external_id": "id", "title": "t"}}}})
+    post = lambda **it: coord.post("/api/sources/trk/events", {"items": [{"external_id": "C1", "title": "Kártya", **it}]})
+    tid = post(list="Backlog")["created"][0]
+    cur = coord.get("/api/coordinator/updates")["cursor"]
+    assert "Lista: Backlog" in dash.get(f"/api/tickets/{tid}")["description"]
+    dash.post(f"/api/tickets/{tid}/go", {"value": True})
+    nxt(wa)
+    wa.post(f"/api/tickets/{tid}/finish", {"summary": "UAT-on", "to": "release"})
+    post(list="Review / UAT")  # mi mozgattuk: listaváltás, a Coordinator dönt róla
+    post(list="Review / UAT", comments="Ügyfél (1):\nnem jó a gomb")
+    r = coord.get(f"/api/coordinator/updates?after={cur}")
+    assert [u["ticket"] for u in r["updates"]] == [tid, tid]
+    assert r["updates"][0]["list_from"] == "Backlog" and "nem jó" in r["updates"][1]["comments"]
+    assert coord.get(f"/api/coordinator/updates?after={r['cursor']}")["updates"] == []
+    coord.post(f"/api/tickets/{tid}/coordinator", {"action": "reopen", "reason": "UAT-visszajelzés", "priority": 1,
+                                                   "title": "[UAT] Kártya"})
+    d = dash.get(f"/api/tickets/{tid}")
+    assert d["status"] == "READY" and d["priority"] == 1 and d["title"] == "[UAT] Kártya" and d["start_approved"]
+    wa.post(f"/api/tickets/{tid}/coordinator", {"action": "reopen", "reason": "x"}, ok=403)
+    n = coord.post("/api/tickets", {"title": "Automata értesítő"})
+    coord.post(f"/api/tickets/{n['id']}/coordinator", {"action": "dismiss"}, ok=400)  # indoklás nélkül nem
+    coord.post(f"/api/tickets/{n['id']}/coordinator", {"action": "dismiss", "reason": "automata levél"})
+    q = coord.post("/api/tickets", {"title": "Hol találom?"})
+    coord.post(f"/api/tickets/{q['id']}/coordinator", {"action": "done", "reason": "megválaszoltuk a kártyán"})
+    assert [dash.get(f"/api/tickets/{x}")["status"] for x in (n["id"], q["id"])] == ["CANCELLED", "COMPLETED"]

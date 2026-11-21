@@ -454,6 +454,18 @@ def go(tid: int, body: GoIn, p: Principal = Any):
         return ser.ticket(t, brief=True)
 
 
+class HotfixIn(BaseModel):
+    value: bool
+
+
+@app.post("/api/tickets/{tid}/hotfix")
+def hotfix(tid: int, body: HotfixIn, p: Principal = Dash):
+    with db.session() as s:
+        t = sv.get_ticket(s, p, tid, lock=True)
+        sv.set_hotfix(s, p, t, body.value)
+        return ser.ticket(t, brief=True)
+
+
 class TransitionIn(BaseModel):
     action: str
     note: str | None = None
@@ -547,6 +559,15 @@ def _worker_payload(s, t, resumed, p):
             "escalate_to": gc.models.escalate_to}
 
 
+@app.get("/api/worker/peek")
+def worker_peek(p: Principal = Worker):
+    """A következő jelölt lefoglalás nélkül, a helyi kapunak (worker_gate_command)."""
+    with db.session() as s:
+        t = sv.peek_ticket(s, p)
+        return {"ticket": ser.ticket(t, brief=True) if t else None,
+                "gate": sv.global_config(s).worker_gate_command}
+
+
 @app.get("/api/worker/next")
 async def worker_next(request: Request, wait: int = 25, session: str | None = None, p: Principal = Worker):
     inst = instance(request)
@@ -623,13 +644,43 @@ class FinishIn(BaseModel):
     summary: str
     payload: dict | None = None
     run: RunIn | None = None
+    to: str = "review"
 
 
 @app.post("/api/tickets/{tid}/finish")
 def ticket_finish(tid: int, body: FinishIn, request: Request, p: Principal = Worker):
     with db.session() as s:
-        sv.finish(s, p, tid, body.summary, body.payload, body.run.model_dump() if body.run else None, instance(request), lease(request))
-    return {"ok": True}
+        sv.finish(s, p, tid, body.summary, body.payload, body.run.model_dump() if body.run else None, instance(request),
+                  lease(request), body.to)
+    return {"ok": True, "status": sv.FINISH_TO.get(body.to)}
+
+
+class BlockIn(BaseModel):
+    reason: str
+
+
+@app.post("/api/tickets/{tid}/block")
+def ticket_block(tid: int, body: BlockIn, request: Request, p: Principal = Worker):
+    with db.session() as s:
+        sv.block(s, p, tid, body.reason, instance(request), lease(request))
+    return {"ok": True, "status": "BLOCKED"}
+
+
+@app.get("/api/release")
+def release_list(p: Principal = Worker):
+    with db.session() as s:
+        return [ser.ticket(t, brief=True) | {"result_summary": t.result_summary} for t in sv.release_list(s, p)]
+
+
+class ReleasedIn(BaseModel):
+    summary: str
+
+
+@app.post("/api/tickets/{tid}/released")
+def ticket_released(tid: int, body: ReleasedIn, p: Principal = Worker):
+    with db.session() as s:
+        sv.release_done(s, p, tid, body.summary)
+    return {"ok": True, "status": "COMPLETED"}
 
 
 class FailIn(BaseModel):
@@ -823,7 +874,7 @@ def coordinator_context(request: Request, p: Principal = Coord):
         gc = sv.global_config(s)
         return {"control": sv.control_state(s, "coordinator"),
                 "poll_interval_s": gc.coordinator_poll_interval_s, "model": gc.coordinator_model,
-                "cli_executables": gc.cli_executables,
+                "cli_executables": gc.cli_executables, "instructions": gc.coordinator_instructions or None,
                 "sources": [ser.row(x) for x in s.scalars(select(Source).where(Source.is_active.is_(True)))],
                 "projects": [{"id": x.id, "name": x.name} for x in s.scalars(select(Project).where(Project.is_active.is_(True)))]}
 
@@ -844,6 +895,27 @@ def coordinator_cycle(body: CycleIn, p: Principal = Coord):
         sv.audit(s, p, "coordinator.cycle", "coordinator", None, body.model_dump())
         sv.changed(what="cycle")
     return {"ok": True}
+
+
+@app.get("/api/coordinator/updates")
+def coordinator_updates(after: int | None = None, p: Principal = Coord):
+    with db.session() as s:
+        return sv.coordinator_updates(s, after)
+
+
+class CoordActIn(BaseModel):
+    action: str
+    reason: str | None = None
+    priority: int | None = None
+    title: str | None = None
+
+
+@app.post("/api/tickets/{tid}/coordinator")
+def coordinator_act(tid: int, body: CoordActIn, p: Principal = Coord):
+    with db.session() as s:
+        t = sv.get_ticket(s, p, tid, lock=True)
+        sv.coordinator_act(s, p, t, body.action, body.reason, body.priority, body.title)
+        return ser.ticket(t, brief=True)
 
 
 @app.get("/api/coordinator/pending")

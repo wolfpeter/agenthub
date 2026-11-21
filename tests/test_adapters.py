@@ -31,13 +31,20 @@ def test_cli_adapter_no_shell_and_limits():
         adapters.run_cli(bad, ["python3"])
 
 
+LISTS = [{"id": "L1", "name": "Review / UAT"}, {"id": "L2", "name": "Kész"}, {"id": "L", "name": "Backlog"}]
+
+
 def test_trello_reader_filters_lists():
     def h(req):
         assert req.url.params["token"] == "tttttttttt"
-        return httpx.Response(200, json=[{"id": "c1", "shortLink": "AbCd1234", "name": "A", "idList": "L1", "shortUrl": "u"},
+        if req.url.path.endswith("/lists"):
+            return httpx.Response(200, json=LISTS)
+        return httpx.Response(200, json=[{"id": "c1", "shortLink": "AbCd1234", "name": "A", "idList": "L1", "shortUrl": "u",
+                                          "labels": [{"name": "Hiba!!!"}, {"name": "", "color": "red"}]},
                                          {"id": "c2", "name": "B", "idList": "L2"}])
     items = adapters.run_trello(TrelloAdapterConfig(board_id="b", lists=["L1"]), client(h))
     assert [i["external_id"] for i in items] == ["AbCd1234"]
+    assert items[0]["list"] == "Review / UAT" and items[0]["labels"] == "Hiba!!!, red"
 
 
 def test_jira_reader():
@@ -103,6 +110,8 @@ def test_env_only_secret_is_masked(monkeypatch):
 
 def test_trello_and_jira_comments():
     def trello(req):
+        if req.url.path.endswith("/lists"):
+            return httpx.Response(200, json=LISTS)
         assert req.url.params["actions"] == "commentCard"
         return httpx.Response(200, json=[{"id": "c1", "shortLink": "S1", "name": "A", "idList": "L", "actions": [
             {"type": "commentCard", "date": "2026-11-21T10:00:00Z", "data": {"text": "második"}, "memberCreator": {"fullName": "Béla"}},

@@ -46,6 +46,15 @@ A Dashboardon:
 - Válaszolsz a Worker kérdéseire.
 - Jóváhagyod vagy elutasítod a külső műveleteket.
 - Elfogadod az eredményt (REVIEW → COMPLETED).
+- Hotfixnek jelölöd a sürgős javítást: a Worker elsőként veszi fel, és a projekt utasítása szerint teszt után élesíti.
+
+**Testreszabás a célgépen, az AgentHub módosítása nélkül:**
+- `worker.instructions` (projektenként) és `coordinator_instructions` (globális): a helyi szabályok. Ütközéskor ezek az irányadók a skillek alapszabályaival szemben.
+- `worker.allowed_tools`, `coordinator_allowed_tools` és a permission mode: például MCP-eszközök a közvetlen írásokhoz.
+- `worker.review_required: false`: a Worker emberi átvétel nélkül is lezárhat.
+- `worker_gate_command`: helyi script, amely a Worker elé kapuként áll (pl. kvótafigyelés).
+- CLI-forrás: bármilyen JSON-t adó script (pl. piros pipeline, figyelő scriptek).
+- Élesítés: `finish --to release` → „Release-re vár”; a kiadás után `agenthub release list` és `agenthub release done`.
 
 | Parancs | Mire |
 | --- | --- |
