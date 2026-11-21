@@ -278,3 +278,15 @@ def test_cli_renews_expired_lease_once(env, capsys, monkeypatch):
         s.execute(text("update tickets set lease_expires_at = now() - interval '1 minute' where id = :i"), {"i": t["id"]})
     assert run(capsys, "ticket", "finish", str(t["id"]), "--summary", "kész")["status"] == "REVIEW"
     assert cli.load_state("worker-demo")["lease_id"] != first
+
+
+def test_config_export_import_roundtrip(env, capsys, tmp_path):
+    """A config import a saját Content-Type-ját az Authorization mellé teszi (korábban TypeError lett belőle)."""
+    f = tmp_path / "cfg.yaml"
+    cli.main(["config", "export", str(f)])
+    f.write_text(f.read_text().replace("coordinator_poll_interval_s: 600", "coordinator_poll_interval_s: 700"))
+    capsys.readouterr()
+    cli.main(["config", "import", str(f)])
+    capsys.readouterr()
+    cli.main(["config", "export"])
+    assert "coordinator_poll_interval_s: 700" in capsys.readouterr().out

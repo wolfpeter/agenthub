@@ -77,7 +77,7 @@ class Api:
     def call(self, method, path, **kw):
         for attempt in range(4):  # átmeneti hiba: exponenciális visszalépés (SPECIFICATION 20)
             try:
-                r = self.c.request(method, path, headers=self.h, **kw)
+                r = self.c.request(method, path, **{**kw, "headers": {**self.h, **kw.get("headers", {})}})
             except httpx.TransportError as e:
                 if attempt == 3:
                     die(f"az API nem érhető el ({api_url()}): {type(e).__name__}")
@@ -700,7 +700,7 @@ def cmd_config(a):
             print(text)
     else:
         r = api.call("POST", "/api/config-import", content=Path(a.file).read_text().encode(),
-                     headers={**api.h, "Content-Type": "application/yaml"})
+                     headers={"Content-Type": "application/yaml"})
         out(r)
 
 
