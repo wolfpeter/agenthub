@@ -114,6 +114,10 @@ def instance(request: Request) -> str | None:
     return request.headers.get("x-agenthub-instance")
 
 
+def lease(request: Request) -> str | None:
+    return request.headers.get("x-agenthub-lease")
+
+
 class LoginIn(BaseModel):
     key: str
 
@@ -439,7 +443,8 @@ def _worker_payload(s, t, resumed, p):
     d = ser.ticket(t)
     if len(d.get("description") or "") > 3000:
         d["description"] = d["description"][:3000] + "… (a teljes leírás: agenthub ticket show)"
-    return {"ticket": d, "resumed": resumed, "model": model, "escalate_to": gc.models.escalate_to}
+    return {"ticket": d, "lease_id": t.current_lease_id, "resumed": resumed, "model": model,
+            "escalate_to": gc.models.escalate_to}
 
 
 @app.get("/api/worker/next")
@@ -489,7 +494,7 @@ class NoteIn(BaseModel):
 @app.post("/api/tickets/{tid}/note")
 def ticket_note(tid: int, body: NoteIn, request: Request, p: Principal = Worker):
     with db.session() as s:
-        sv.note(s, p, tid, body.text, instance(request))
+        sv.note(s, p, tid, body.text, instance(request), lease(request))
     return {"ok": True}
 
 
@@ -502,7 +507,7 @@ class AskIn(BaseModel):
 @app.post("/api/tickets/{tid}/ask")
 def ticket_ask(tid: int, body: AskIn, request: Request, p: Principal = Worker):
     with db.session() as s:
-        q = sv.ask(s, p, tid, body.question, body.context, body.suggested_answer, instance(request))
+        q = sv.ask(s, p, tid, body.question, body.context, body.suggested_answer, instance(request), lease(request))
         return ser.row(q)
 
 
@@ -522,7 +527,7 @@ class FinishIn(BaseModel):
 @app.post("/api/tickets/{tid}/finish")
 def ticket_finish(tid: int, body: FinishIn, request: Request, p: Principal = Worker):
     with db.session() as s:
-        sv.finish(s, p, tid, body.summary, body.payload, body.run.model_dump() if body.run else None, instance(request))
+        sv.finish(s, p, tid, body.summary, body.payload, body.run.model_dump() if body.run else None, instance(request), lease(request))
     return {"ok": True}
 
 
@@ -534,7 +539,7 @@ class FailIn(BaseModel):
 @app.post("/api/tickets/{tid}/fail")
 def ticket_fail(tid: int, body: FailIn, request: Request, p: Principal = Worker):
     with db.session() as s:
-        sv.fail(s, p, tid, body.error, body.run.model_dump() if body.run else None, instance(request))
+        sv.fail(s, p, tid, body.error, body.run.model_dump() if body.run else None, instance(request), lease(request))
     return {"ok": True}
 
 
@@ -549,7 +554,7 @@ class ActionIn(BaseModel):
 def ticket_action(tid: int, body: ActionIn, request: Request, p: Principal = Depends(need("worker", "coordinator"))):
     with db.session() as s:
         a = sv.propose_action(s, p, tid, body.target_system, body.action_type, body.target_reference, body.payload,
-                              instance(request))
+                              instance(request), lease(request))
         return _action(a)
 
 

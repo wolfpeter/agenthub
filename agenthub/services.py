@@ -217,7 +217,9 @@ def _move(s, t: Ticket, new: str, who: Principal, etype="status", payload=None):
     if new == "READY" and not t.project_id:
         raise Invalid("projekt nélkül a ticket nem lehet READY")
     if old == "IN_PROGRESS" and new != "IN_PROGRESS":
-        t.current_lease_id = t.lease_expires_at = None
+        t.lease_expires_at = None
+        if new != "PENDING_APPROVAL":  # ugyanabban a körben a lease birtokosa további műveletet javasolhat
+            t.current_lease_id = None
         s.execute(update(AgentInstance).where(AgentInstance.active_ticket_id == t.id).values(active_ticket_id=None))
     t.status, t.updated_at = new, now()
     event(s, t, who, etype, old, new, payload)
@@ -462,24 +464,27 @@ def _mark_active(s, instance_id, tid):
         inst.active_ticket_id = tid
 
 
-def _fence(t: Ticket, instance_id: str | None):
-    """Csak a ticketet claimelő példány írhat; átvétel után a régi session minden írása 409."""
-    if not instance_id or t.assigned_worker_id != instance_id:
-        raise Conflict(f"a #{t.id} ticketet nem ez a Worker-példány tartja (átvették vagy lejárt); kérj új ticketet")
+def _fence(t: Ticket, instance_id: str | None, lease_id: str | None, check_expiry: bool = True):
+    """Csak az érvényes lease birtokosa írhat: példány + lease-azonosító + nem lejárt. Különben 409,
+    és a Worker `agenthub worker wait`-tel kérje vissza a ticketet (ha senki nem vette át, új lease-szel visszakapja)."""
+    if not instance_id or t.assigned_worker_id != instance_id or not lease_id or t.current_lease_id != lease_id:
+        raise Conflict(f"a #{t.id} ticketet nem ez a Worker-példány/lease tartja (átvették); kérj új ticketet: agenthub worker wait")
+    if check_expiry and (not t.lease_expires_at or t.lease_expires_at <= now()):
+        raise Conflict(f"a #{t.id} ticket lease-e lejárt; kérd vissza: agenthub worker wait")
 
 
-def _own_in_progress(s, who: Principal, tid: int, instance_id: str | None) -> Ticket:
+def _own_in_progress(s, who: Principal, tid: int, instance_id: str | None, lease_id: str | None) -> Ticket:
     t = get_ticket(s, who, tid, lock=True)
     if who.role != "worker":
         raise Forbidden("csak a Worker")
     if t.status != "IN_PROGRESS":
         raise Invalid(f"a #{tid} ticket nincs feldolgozás alatt (most: {t.status})")
-    _fence(t, instance_id)
+    _fence(t, instance_id, lease_id)
     return t
 
 
-def note(s, who: Principal, tid: int, text: str, instance_id: str | None = None):
-    t = _own_in_progress(s, who, tid, instance_id)
+def note(s, who: Principal, tid: int, text: str, instance_id: str | None = None, lease_id: str | None = None):
+    t = _own_in_progress(s, who, tid, instance_id, lease_id)
     event(s, t, who, "note", payload={"text": text[:4000]})
     heartbeat(s, who, instance_id, t)
     t.updated_at = now()
@@ -487,8 +492,8 @@ def note(s, who: Principal, tid: int, text: str, instance_id: str | None = None)
 
 
 def ask(s, who: Principal, tid: int, question: str, context: str = "", suggested: str | None = None,
-        instance_id: str | None = None):
-    t = _own_in_progress(s, who, tid, instance_id)
+        instance_id: str | None = None, lease_id: str | None = None):
+    t = _own_in_progress(s, who, tid, instance_id, lease_id)
     if not question.strip():
         raise Invalid("üres kérdés")
     q = TicketQuestion(ticket_id=t.id, question=question.strip(), context=context or "", suggested_answer=suggested,
@@ -522,8 +527,8 @@ def answer(s, who: Principal, qid: int, text: str) -> TicketQuestion:
     return q
 
 
-def finish(s, who: Principal, tid: int, summary: str, payload: dict | None, run: dict | None, instance_id=None):
-    t = _own_in_progress(s, who, tid, instance_id)
+def finish(s, who: Principal, tid: int, summary: str, payload: dict | None, run: dict | None, instance_id=None, lease_id=None):
+    t = _own_in_progress(s, who, tid, instance_id, lease_id)
     if not summary.strip():
         raise Invalid("az eredmény összefoglalója kötelező")
     t.result_summary, t.result_payload, t.last_error = summary.strip(), payload, None
@@ -531,8 +536,8 @@ def finish(s, who: Principal, tid: int, summary: str, payload: dict | None, run:
     _move(s, t, "REVIEW", who, "finished", {"summary": summary.strip()[:2000]})
 
 
-def fail(s, who: Principal, tid: int, error: str, run: dict | None = None, instance_id=None):
-    t = _own_in_progress(s, who, tid, instance_id)
+def fail(s, who: Principal, tid: int, error: str, run: dict | None = None, instance_id=None, lease_id=None):
+    t = _own_in_progress(s, who, tid, instance_id, lease_id)
     t.last_error = error.strip() or "ismeretlen hiba"
     t.retry_count += 1
     _record_run(s, who, t, run, "failed", instance_id)
@@ -567,7 +572,7 @@ ACTION_TERMINAL = {"EXECUTED", "MANUALLY_CONFIRMED", "REJECTED", "FAILED", "CANC
 
 
 def propose_action(s, who: Principal, tid: int | None, target: str, action_type: str, reference: str | None,
-                   payload: dict, instance_id: str | None = None) -> PendingAction:
+                   payload: dict, instance_id: str | None = None, lease_id: str | None = None) -> PendingAction:
     if who.role not in ("worker", "coordinator"):
         raise Forbidden("műveletet agent javasol")
     if target not in TARGETS:
@@ -581,7 +586,7 @@ def propose_action(s, who: Principal, tid: int | None, target: str, action_type:
             # több javaslat is mehet egy körben: az első után a ticket már PENDING_APPROVAL
             if t.status not in ("IN_PROGRESS", "PENDING_APPROVAL"):
                 raise Invalid(f"a #{tid} ticket nincs feldolgozás alatt (most: {t.status})")
-            _fence(t, instance_id)
+            _fence(t, instance_id, lease_id, check_expiry=t.status == "IN_PROGRESS")
         else:
             t = get_ticket(s, who, tid)
     elif who.role == "worker":

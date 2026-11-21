@@ -145,7 +145,10 @@ def project_for_cwd(explicit: str | None = None) -> str:
 
 def worker_api(project: str) -> Api:
     st = load_state(f"worker-{project}")
-    return Api(read_key(f"projects/{project}.key"), st.get("instance_id"))
+    api = Api(read_key(f"projects/{project}.key"), st.get("instance_id"))
+    if st.get("lease_id"):  # fencing token: csak az aktuális lease birtokosa írhat a ticketre
+        api.h["X-AgentHub-Lease"] = st["lease_id"]
+    return api
 
 
 def coord_api() -> Api:
@@ -367,6 +370,10 @@ def cmd_worker(a):
             left = int(end - time.time())
             r = api.get(f"/api/worker/next?wait={max(0, min(left, 50))}"
                         + (f"&session={st['session_id']}" if st.get("session_id") else ""))
+            if r.get("ticket"):
+                st = load_state(f"worker-{pid}")
+                st["lease_id"] = r.get("lease_id")
+                save_state(f"worker-{pid}", st)
             if r.get("ticket") or r.get("stop"):
                 out(r)
                 return

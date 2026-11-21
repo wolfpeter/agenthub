@@ -9,7 +9,11 @@ def new(dash, project="alpha", **kw):
 
 
 def nxt(w, wait=0):
-    return w.get(f"/api/worker/next?wait={wait}")
+    """Mint a CLI: a kapott lease-azonosítót a további ticketírásokhoz elküldi."""
+    r = w.get(f"/api/worker/next?wait={wait}")
+    if r.get("lease_id"):
+        w.h["X-AgentHub-Lease"] = r["lease_id"]
+    return r
 
 
 # ------------------------------------------------------------ állapotgép
@@ -320,6 +324,9 @@ def test_stale_worker_fenced_after_takeover(client, dash):
     w1.post(f"/api/tickets/{tid}/actions", {"target_system": "trello", "action_type": "comment", "payload": {"text": "x"}}, ok=409)
     Api(client, k).post(f"/api/tickets/{tid}/note", {"text": "fejléc nélkül"}, ok=409)
     assert dash.get(f"/api/tickets/{tid}")["status"] == "IN_PROGRESS"
+    w2.h["X-AgentHub-Lease"] = "old"
+    w2.post(f"/api/tickets/{tid}/note", {"text": "rossz lease"}, ok=409)
+    nxt(w2)  # ugyanaz a példány, érvényes lease: ugyanazt a lease-t kapja vissza
     w2.post(f"/api/tickets/{tid}/finish", {"summary": "kész"})
     assert dash.get(f"/api/tickets/{tid}")["status"] == "REVIEW"
 
@@ -393,3 +400,21 @@ def test_source_update_refreshes_fields_but_keeps_local_edits(dash, coord):
     assert t["title"] == "Saját cím" and t["description"] == "harmadik"  # az ember szerkesztése megmarad
     ev = [e for e in t["events"] if e["event_type"] == "source_update"][-1]["payload"]
     assert ev["kept_local"] == ["title"] and ev["applied"] == ["description"]
+
+
+def test_expired_lease_fenced_until_reclaimed(client, dash):
+    k = make_project(dash, "solo")
+    w1 = Api(client, k, "i1")
+    w1.post("/api/agents/register", {"instance_id": "i1"})
+    t = new(dash, "solo", start_approved=True)
+    first = nxt(w1)["lease_id"]
+    _age("update tickets set lease_expires_at = now() - interval '1 minute' where id = :i", i=t["id"])
+    # lejárt, de még senki nem vette át: a régi lease-szel sem írhat
+    for path, body in (("note", {"text": "x"}), ("ask", {"question": "?"}), ("finish", {"summary": "k"}),
+                       ("fail", {"error": "x"}),
+                       ("actions", {"target_system": "trello", "action_type": "comment", "payload": {"text": "x"}})):
+        w1.post(f"/api/tickets/{t['id']}/{path}", body, ok=409)
+    again = nxt(w1)  # visszakéri: új lease-szel folytathatja
+    assert again["ticket"]["id"] == t["id"] and again["lease_id"] != first
+    w1.post(f"/api/tickets/{t['id']}/finish", {"summary": "kész"})
+    assert dash.get(f"/api/tickets/{t['id']}")["status"] == "REVIEW"
