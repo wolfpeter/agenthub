@@ -373,3 +373,23 @@ def test_restart_runs_approved_not_started(monkeypatch, dash, two_projects):
     appmod._startup()  # második indulás: nem fut újra
     assert len(calls) == 1
 
+
+
+def test_source_update_refreshes_fields_but_keeps_local_edits(dash, coord):
+    g = dash.get("/api/config/global")["current"]
+    g["cli_executables"] = ["echo"]
+    dash.post("/api/config/global", {"data": g})
+    dash.post("/api/config/source", {"data": {"id": "trk", "name": "T", "adapter_type": "cli",
+                                              "settings": {"executable": "echo", "fields": {"external_id": "id", "title": "t"}}}})
+    post = lambda **it: coord.post("/api/sources/trk/events", {"items": [{"external_id": "X-1", **it}]})
+    tid = post(title="Régi cím", description="régi leírás", url="http://a")["created"][0]
+    post(title="Új cím", description="új leírás", url="http://b")
+    t = dash.get(f"/api/tickets/{tid}")
+    assert (t["title"], t["description"], t["source_url"]) == ("Új cím", "új leírás", "http://b")
+    r = dash.c.patch(f"/api/tickets/{tid}", json={"title": "Saját cím"}, headers=dash.h)
+    assert r.status_code == 200, r.text
+    post(title="Még újabb cím", description="harmadik", url="http://b")
+    t = dash.get(f"/api/tickets/{tid}")
+    assert t["title"] == "Saját cím" and t["description"] == "harmadik"  # az ember szerkesztése megmarad
+    ev = [e for e in t["events"] if e["event_type"] == "source_update"][-1]["payload"]
+    assert ev["kept_local"] == ["title"] and ev["applied"] == ["description"]

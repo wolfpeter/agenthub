@@ -825,6 +825,26 @@ def match_rule(rules, item: dict, source_id: str):
     return None
 
 
+SOURCE_FIELDS = {"title": ("title", 500), "description": ("description", None), "url": ("source_url", 1000)}
+
+
+def _apply_source_fields(t: Ticket, prev: dict, item: dict) -> dict:
+    """A forrás írja felül a mezőt, kivéve ha ember/agent közben átírta (a ticket már nem a korábbi forrásértéket mutatja)."""
+    applied, kept = [], []
+    for key, (attr, limit) in SOURCE_FIELDS.items():
+        new, old = (item.get(key) or ""), (prev.get(key) or "")
+        new, old = (new[:limit], old[:limit]) if limit else (new, old)
+        cur = getattr(t, attr) or ""
+        if not new or new == cur:
+            continue
+        if cur == old:
+            setattr(t, attr, new)
+            applied.append(key)
+        else:
+            kept.append(key)
+    return {"applied": applied, "kept_local": kept}
+
+
 def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | None = None) -> dict:
     """Normalizált forrásesemények: idempotens, szabályalapú, modell nélkül. Csak a bizonytalan marad NEW."""
     if who.role != "coordinator":
@@ -850,6 +870,8 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
                                                  SourceEvent.payload_hash == h)):
             out["skipped"] += 1
             continue
+        prev = s.scalar(select(SourceEvent.payload).where(SourceEvent.source_id == src.id, SourceEvent.external_id == ext)
+                        .order_by(SourceEvent.id.desc()).limit(1))
         se = SourceEvent(source_id=src.id, external_id=ext, thread_id=item.get("thread_id"), payload_hash=h,
                          payload=item)
         s.add(se)
@@ -858,8 +880,10 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
             t = s.scalar(select(Ticket).where(Ticket.source_id == src.id, Ticket.thread_id == item["thread_id"])
                          .order_by(Ticket.id.desc()).limit(1))
         if t is not None:
-            event(s, t, who, "source_update", payload={k: item.get(k) for k in ("title", "description", "url", "sender")
-                                                         if item.get(k)})
+            payload = {k: item.get(k) for k in ("title", "description", "url", "sender") if item.get(k)}
+            if t.external_id == ext:  # ugyanaz az elem változott, nem egy szál új levele
+                payload.update(_apply_source_fields(t, prev or {}, item))
+            event(s, t, who, "source_update", payload=payload)
             t.updated_at = now()
             out["updated"].append(t.id)
         else:

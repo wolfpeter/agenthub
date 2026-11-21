@@ -481,7 +481,7 @@ Lease lejáratkor a ticket visszanyerhető, de csak az egyetlen projekt-Worker c
 
 Worker összeomlásakor ticket IN_PROGRESS maradhat, de a stale lease felismerhető legyen.
 
-Ismételt külső események idempotens feldolgozása.
+Ismételt külső események idempotens feldolgozása. Ha egy meglévő külső elem megváltozik, a forrás frissíti a ticket címét, leírását és forrás-URL-jét. Kivétel az a mező, amelyet a ticketen közben átírtak: az megmarad, és a `source_update` esemény jelzi (`kept_local`).
 
 Konfigurációs hiba esetén az utolsó érvényes konfiguráció marad aktív.
 
