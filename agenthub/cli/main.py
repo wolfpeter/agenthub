@@ -650,7 +650,7 @@ def cmd_coordinator(a):
         sf.parent.mkdir(parents=True, exist_ok=True)
         sf.write_text(json.dumps({"permissions": perms, "env": {"AGENTHUB_ROLE": "coordinator"}}, indent=2))
         sid = str(uuid.uuid4())
-        print(f"cd {home()} && AGENTHUB_SESSION_ID={sid} claude --session-id {sid} --settings {sf}")
+        print(f"cd {home()} && AGENTHUB_SESSION_ID={sid} claude --session-id {sid} --model {gc['coordinator_model']} --settings {sf}")
         print("# ...majd a sessionben: /coordinator")
         return
     if a.action == "start":

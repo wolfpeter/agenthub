@@ -338,7 +338,8 @@ def test_coordinator_wait_reports_updates_once(env, capsys):
                                                "poll_interval_s": 60, "settings": {
         "executable": "python3", "args": ["-c", f"print(open('{data}').read())"],
         "fields": {"external_id": "id", "title": "t", "list": "l"}}}})
-    run(capsys, "coordinator", "command")
+    lines = run(capsys, "coordinator", "command")
+    assert f"--model {g['coordinator_model']} " in str(lines)  # a beállított modell, nem az alapértelmezett
     st = json.loads((home / "data/coordinator-settings.json").read_text())
     assert "mcp__trello__write" in st["permissions"]["allow"] and st["permissions"]["defaultMode"] == "bypassPermissions"
     assert "mcp__gmail__trash_thread" in st["permissions"]["deny"]
