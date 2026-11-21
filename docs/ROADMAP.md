@@ -32,7 +32,7 @@ Fontos: a Claude Code skill-felismerés, session resume és modellváltás ponto
 | M2 – Többprojekt és izoláció | Kész | Izoláció API-tesztekkel és Claude permission-méréssel |
 | M3 – Emberi közreműködés és jóváhagyás | Kész | Kérdés/válasz, jóváhagyás, író adapter (mock) |
 | M4 – Projektmemória | Kész | DB + Markdown, Knowledge Review |
-| M5 – Konfiguráció és adapterbővítés | Kész | Élő Trello/Jira/IMAP ellen nem mérve |
+| M5 – Konfiguráció és adapterbővítés | Kész | Élő Trello/Jira/IMAP ellen nem mérve; szemantikus duplikáció-összevonás szóegyezéssel (2026-11-21) |
 | M6 – Üzemeltetés és kiadható termék | Részben | Telepítés, frissítés, mentés/visszaállítás mérve ezen a VM-en; tiszta VM-en nem |
 
 ## M0 – Technikai validáció
@@ -48,7 +48,7 @@ Nincs; kis prototípusokkal indul.
 ### Feladatlista
 
 - [x] Claude Code aktuális skill-formátumának és telepítési helyének ellenőrzése.
-- [x] Egy minimális /coordinator és /worker skill kézi indítása külön terminálból.
+- [x] Egy minimális /coordinator és /worker skill kézi indítása külön terminálból. (A skill a CLI-n át végigfutott `claude -p`-vel; interaktív terminálban a `/coordinator`, `/worker` perjeles hívás nincs mérve.)
 - [x] Bizonyítani, hogy a skill képes az AgentHub API-t meghívni és választ feldolgozni.
 - [x] Session ID és dokumentált session-resume folyamat kipróbálása; CLI kézi újraindításával. (Resume mérve; az új sessionben folytatás valódi sessionnel nincs mérve.)
 - [x] Projektkönyvtár és API-hozzáférés korlátozásának prototípusos tesztje.
@@ -80,7 +80,7 @@ M0 alapvető technikai kérdései tisztázva.
 - [x] Dashboard-kulcs: a telepítés/indítás kiírja, a Dashboard bekéri és cookie-ban tárolja; agentkulcs a Coordinatornak és a projekt Workerének.
 - [x] `agenthub coordinator wait` és `agenthub worker wait`: várakozás és claim modellhívás nélkül.
 - [x] Manuális ticketfelvétel a Dashboardról; külső forrásintegráció még nem feltétel.
-- [x] Kézzel indítható /coordinator és /worker skill külön terminálból.
+- [x] Kézzel indítható /coordinator és /worker skill külön terminálból. (Interaktív perjeles hívás nincs mérve, lásd M0.)
 - [x] Coordinator minimális feladata: a manuális ticketek áttekintése és READY állapotba rendezése.
 - [x] Mehet jelölés a ticketen (alapból kikapcsolva; ember kapcsolhatja a Dashboardon, a Coordinator indoklással sürgős, halaszthatatlan hibánál); a Worker csak bepipált ticketet vehet fel, és nem módosíthatja a jelölést.
 - [x] Worker: egy READY és bepipált ticket felvétele, feldolgozása a projektben, eredmény és státusz visszaírása.
@@ -204,8 +204,8 @@ M1–M5 fő funkciói stabilak.
 - [x] Frissítés előtt adatbázis- és konfigurációmentés.
 - [x] Backup/restore parancsok és dokumentáció.
 - [x] DB migrációk és frissítés utáni health check.
-- [x] Titkok maszkolása, Dashboard hozzáférés és hálózati beállítások hardeningje.
-- [x] Alap logok, agent heartbeat, futási idő és becsült költség megjelenítése.
+- [x] Titkok maszkolása, Dashboard hozzáférés és hálózati beállítások hardeningje. (Nyilvános internetes címről alapból 403; strukturált kérésnapló, naplóforgatás.)
+- [x] Alap logok, agent heartbeat, futási idő és becsült költség megjelenítése. (Agent nézet: futások, token, költség, futási idő; projektenként havi költség a kerethez képest.)
 - [x] Teszt: Worker megszakadása, lease lejárat, ticket folytatása és session fallback. (API-tesztek és `--resume` mérés; a fallback valódi sessionnel nincs mérve.)
 - [x] End-to-end teszt: forrás vagy manuális ticket → Coordinator → Worker → eredmény → Dashboard.
 - [ ] Tiszta Ubuntu VM-en telepítési és visszaállítási próba. (A fejlesztő VM-en, külön könyvtárba telepítve mérve; tiszta VM-en még nem.)
@@ -217,7 +217,7 @@ M1–M5 fő funkciói stabilak.
 ## Végső ellenőrzőlista
 
 - [x] Az első működő mérföldkő valódi ticketet tud feldolgozni az elejétől az eredményig.
-- [x] A Coordinator és Worker külön, látható terminálból, kézzel indul.
+- [x] A Coordinator és Worker külön, látható terminálból, kézzel indul. (Interaktív perjeles hívás nincs mérve, lásd M0.)
 - [x] Projektenként egy Worker és egy aktív feldolgozás érvényesül.
 - [x] A Worker csak a saját projektjéhez fér hozzá.
 - [x] A félbehagyott ticket alapértelmezésben folytatható, de a viselkedés konfigurálható.

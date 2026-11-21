@@ -211,7 +211,7 @@ Validálandó: a Claude Code aktuális verziójának session-azonosítási és r
 | CANCELLED | Megszakított ticket |
 | NEEDS_TRIAGE | Projekt vagy értelmezés emberi besorolást igényel |
 
-Minden státuszváltozás TicketEvent rekordot hoz létre. A ticketnek kötelező ProjectId-val rendelkeznie, két kivétellel: a NEEDS_TRIAGE állapotú ticket (a projekt még nem ismert) és a kifejezetten globális rendszerfeladat. NEEDS_TRIAGE állapotból csak ProjectId megadásával lehet továbblépni. A státuszátmeneteket szerveroldali állapotgép validálja; a táblában nem szereplő átmenet tilos.
+Minden státuszváltozás TicketEvent rekordot hoz létre. A ticketnek kötelező ProjectId-val rendelkeznie, egy kivétellel: a NEW és a NEEDS_TRIAGE állapotú ticket (a projekt még nem ismert). Globális, projekt nélküli rendszerfeladat az első verzióban nincs: projekt nélkül a ticket nem lehet READY, így Worker sem dolgozhatja fel. NEEDS_TRIAGE állapotból csak ProjectId megadásával lehet továbblépni. A státuszátmeneteket szerveroldali állapotgép validálja; a táblában nem szereplő átmenet tilos.
 
 ### 8.0 Megengedett státuszátmenetek
 
@@ -399,7 +399,7 @@ Tickets: lista, szűrés, létrehozás, módosítás, claim, státuszátmenet, e
 
 Agents: regisztráció/metaadat, heartbeat, állapot, session-adatok, futási statisztika.
 
-Sources: adapter-konfiguráció, tesztelés, aktiválás/deaktiválás.
+Sources: adapter-konfiguráció, tesztelés, aktiválás/deaktiválás. Az olvasó adapterek a hoston futnak, a meglévő CLI-bejelentkezésekkel (5.1), ezért egy forrás kipróbálása a hoston történik: `agenthub source test <id>`. A Dashboard a forrás utolsó lekérdezését és hibáját mutatja.
 
 Questions: kérdés létrehozása, válasz beküldése.
 
@@ -602,7 +602,7 @@ Ezek nem blokkolják a specifikációt, de a megfelelő megvalósítási fázisb
 | Projektizoláció | VM-en belüli projektek között is szigorú; fájlszinten Claude Code permission-szabályokkal |
 | MVP | ROADMAP M1: egy projekt, kézi ticketek, végigjárható; utána azonnal folytatás |
 | Várakozás és polling | Modellhívás nélkül, `agenthub ... wait` blokkoló paranccsal (5.1) |
-| Projekt nélküli ticket | Csak NEEDS_TRIAGE állapotban (és globális rendszerfeladatnál) |
+| Projekt nélküli ticket | Csak NEW és NEEDS_TRIAGE állapotban; globális rendszerfeladat az első verzióban nincs |
 | Indítás | Ticket alapból nem indul; a Worker csak bepipált (Mehet) ticketet vesz fel. Pipálhat az ember, és indoklással a Coordinator sürgős, halaszthatatlan hibánál |
 | Lezárás | Worker REVIEW-ba tesz, COMPLETED csak emberi elfogadással |
 | Külső írás | Jóváhagyás után az író adapter végrehajthatja; kézi végrehajtás is választható |
