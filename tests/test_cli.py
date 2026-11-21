@@ -169,3 +169,19 @@ def test_agent_session_cannot_run_admin_commands(env, capsys, monkeypatch):
     monkeypatch.setenv("AGENTHUB_ROLE", "coordinator")
     with pytest.raises(SystemExit):
         cli.main(["ticket", "show", "1"])
+
+
+def test_update_stops_on_cli_install_failure(env, monkeypatch, capsys):
+    import subprocess
+    calls = []
+    monkeypatch.setattr(cli, "cmd_backup", lambda *a: "/x/backup.tar.enc")
+    monkeypatch.setattr(cli, "compose", lambda *a, **k: calls.append(a))
+
+    def fake_run(cmd, **k):
+        return subprocess.CompletedProcess(cmd, 1 if cmd[0] == "uv" else 0, "abc123\n", "uv hiba")
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    with pytest.raises(SystemExit):
+        cli.cmd_update(None)
+    err = capsys.readouterr().err
+    assert "uv hiba" in err and "checkout abc123" in err and "/x/backup.tar.enc" in err
+    assert not calls  # a szolgáltatásokat nem indította újra

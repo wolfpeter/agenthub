@@ -722,18 +722,22 @@ def cmd_update(a):
     print("1/5 mentés…")
     backup = cmd_backup()
     print("2/5 frissítés a GitHubról (main/latest)…")
+    old = subprocess.run(["git", "-C", str(h), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    undo = (f"Visszaállítás: git -C {h} checkout {old or '<előző commit>'} && uv tool install --force --reinstall {h}\n"
+            f"  majd: agenthub up && agenthub restore {backup}")
     r = subprocess.run(["git", "-C", str(h), "pull", "--ff-only"], capture_output=True, text=True)
     if r.returncode != 0:
         die(f"git pull nem sikerült: {r.stderr.strip()}\nA rendszer változatlan.")
     print("3/5 parancssor frissítése…")
-    subprocess.run(["uv", "tool", "install", "--force", "--reinstall", str(h)], check=False, capture_output=True)
+    r = subprocess.run(["uv", "tool", "install", "--force", "--reinstall", str(h)], capture_output=True, text=True)
+    if r.returncode != 0:
+        die(f"a parancssor telepítése nem sikerült (a szolgáltatások nem indultak újra):\n{r.stderr.strip()[-2000:]}\n{undo}")
     print("4/5 szolgáltatások újraépítése és migráció…")
-    compose("up", "-d", "--build")
+    if compose("up", "-d", "--build", check=False).returncode != 0:
+        die(f"a szolgáltatások újraépítése nem sikerült.\n{undo}")
     print("5/5 health check…")
     if not wait_health(180):
-        die("a frissítés utáni health check sikertelen.\n"
-            f"Visszaállítás: git -C {h} log (előző commit) → git -C {h} checkout <commit>, majd\n"
-            f"  agenthub up && agenthub restore {backup}")
+        die(f"a frissítés utáni health check sikertelen.\n{undo}")
     skills = Path.home() / ".claude" / "skills"
     if all((skills / n / MARK).exists() for n in SKILLS):
         cmd_skills(argparse.Namespace(target=None, force=False))
