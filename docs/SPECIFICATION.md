@@ -120,7 +120,7 @@ A Coordinator konfigurálható ciklusban (javasolt alapérték: 5–15 perc) ell
 
 Betölti az aktív források és projekt-hozzárendelési szabályok konfigurációját.
 
-Lekéri az új vagy módosult elemeket és kommenteket.
+Lekéri az új vagy módosult elemeket és kommenteket. A Trello- és a Jira-adapter elemenként a legutóbbi 10 kommentet hozza (szerző, idő, szöveg), a CLI-adapter a `comments` mezőleképezéssel. A kommentek a ticket leírásának végére kerülnek („Kommentek a forrásban”). Új komment `source_update` eseményt ad, és frissíti a leírást, ha azt közben nem írták át a ticketen.
 
 Normalizálja az eseményeket, rögzíti a külső azonosítókat és a forráshivatkozásokat.
 

@@ -99,3 +99,21 @@ def test_env_only_secret_is_masked(monkeypatch):
     monkeypatch.setenv("ONLY_IN_ENV", "envtitok123")
     assert secretstore.get("ONLY_IN_ENV") == "envtitok123"
     assert secretstore.mask("hiba: envtitok123") == "hiba: ***"
+
+
+def test_trello_and_jira_comments():
+    def trello(req):
+        assert req.url.params["actions"] == "commentCard"
+        return httpx.Response(200, json=[{"id": "c1", "shortLink": "S1", "name": "A", "idList": "L", "actions": [
+            {"type": "commentCard", "date": "2026-11-21T10:00:00Z", "data": {"text": "második"}, "memberCreator": {"fullName": "Béla"}},
+            {"type": "commentCard", "date": "2026-11-20T10:00:00Z", "data": {"text": "első"}, "memberCreator": {"fullName": "Anna"}}]}])
+    c = adapters.run_trello(TrelloAdapterConfig(board_id="b"), client(trello))[0]["comments"]
+    assert c.index("első") < c.index("második") and "Anna" in c
+
+    def jira(req):
+        assert "comment" in req.url.params["fields"]
+        adf = {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "ADF komment"}]}]}
+        return httpx.Response(200, json={"issues": [{"key": "ABC-1", "fields": {"summary": "S", "description": adf,
+                                                                                "comment": {"comments": [{"author": {"displayName": "Cili"}, "created": "x", "body": adf}]}}}]})
+    it = adapters.run_jira(JiraAdapterConfig(base_url="https://x.atlassian.net", jql="p=A"), client(jira))[0]
+    assert it["description"] == "ADF komment" and "Cili" in it["comments"] and "ADF komment" in it["comments"]

@@ -94,10 +94,30 @@ def run_imap(cfg) -> list[dict]:
         raise AdapterError(secretstore.mask(f"IMAP: {e}")) from None
 
 
+MAX_COMMENTS = 10
+
+
+def _comments(rows: list[tuple]) -> str | None:
+    """Normalizált kommentblokk (szerző, idő, szöveg), a legutóbbi MAX_COMMENTS darab, időrendben."""
+    rows = [r for r in rows if r[2]][-MAX_COMMENTS:]
+    return "\n\n".join(f"{a or '?'} ({d or '?'}):\n{t}" for a, d, t in rows)[:20000] or None
+
+
+def _adf_text(node) -> str:
+    """Jira Cloud v3: az Atlassian Document Format szöveges tartalma."""
+    if isinstance(node, dict):
+        return node.get("text", "") + "".join(_adf_text(c) for c in node.get("content", [])) + \
+            ("\n" if node.get("type") == "paragraph" else "")
+    if isinstance(node, list):
+        return "".join(_adf_text(c) for c in node)
+    return str(node or "")
+
+
 def run_trello(cfg, client=None) -> list[dict]:
     c = client or httpx.Client(timeout=60)
     params = {"key": secretstore.get(cfg.key_secret), "token": secretstore.get(cfg.token_secret),
-              "fields": "name,desc,shortUrl,shortLink,idList,dateLastActivity"}
+              "fields": "name,desc,shortUrl,shortLink,idList,dateLastActivity",
+              "actions": "commentCard", "actions_limit": MAX_COMMENTS}
     r = c.get(f"https://api.trello.com/1/boards/{cfg.board_id}/cards", params=params)
     if r.status_code >= 300:
         raise AdapterError(f"Trello {r.status_code}")
@@ -106,8 +126,11 @@ def run_trello(cfg, client=None) -> list[dict]:
         if cfg.lists and card.get("idList") not in cfg.lists:
             continue
         # shortLink: stabil, a kártya URL-jében is ez szerepel, és az író adapter is elfogadja
+        acts = sorted(card.get("actions") or [], key=lambda x: x.get("date") or "")
+        comments = _comments([((x.get("memberCreator") or {}).get("fullName"), x.get("date"), (x.get("data") or {}).get("text"))
+                              for x in acts if x.get("type") == "commentCard"])
         out.append({"external_id": card.get("shortLink") or card["id"], "title": card.get("name"), "description": card.get("desc") or "",
-                    "url": card.get("shortUrl"), "updated_at": card.get("dateLastActivity")})
+                    "url": card.get("shortUrl"), "updated_at": card.get("dateLastActivity"), "comments": comments})
     return out
 
 
@@ -116,16 +139,19 @@ def run_jira(cfg, client=None) -> list[dict]:
     auth = (secretstore.get(cfg.email_secret), secretstore.get(cfg.token_secret))
     base = cfg.base_url.rstrip("/")
     r = c.get(f"{base}/rest/api/3/search/jql", params={"jql": cfg.jql, "maxResults": cfg.max_results,
-                                                       "fields": "summary,description,updated"}, auth=auth)
+                                                       "fields": "summary,description,updated,comment"}, auth=auth)
     if r.status_code >= 300:
         raise AdapterError(f"Jira {r.status_code}")
     out = []
     for it in r.json().get("issues", []):
         f = it.get("fields", {})
         desc = f.get("description")
+        cs = (f.get("comment") or {}).get("comments") or []
+        comments = _comments([((x.get("author") or {}).get("displayName"), x.get("created"),
+                               x["body"] if isinstance(x.get("body"), str) else _adf_text(x.get("body")).strip()) for x in cs])
         out.append({"external_id": it["key"], "title": f.get("summary"),
-                    "description": desc if isinstance(desc, str) else json.dumps(desc, ensure_ascii=False)[:20000] if desc else "",
-                    "url": f"{base}/browse/{it['key']}", "updated_at": f.get("updated")})
+                    "description": desc if isinstance(desc, str) else _adf_text(desc).strip()[:20000] if desc else "",
+                    "url": f"{base}/browse/{it['key']}", "updated_at": f.get("updated"), "comments": comments})
     return out
 
 

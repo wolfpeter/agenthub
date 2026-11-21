@@ -553,3 +553,19 @@ def test_network_guard_wired(dash):
         assert public.get("/api/health").status_code == 403
     with TestClient(app, client=("100.110.55.26", 5000)) as tailnet:
         assert tailnet.get("/api/health").status_code == 200
+
+
+def test_new_source_comment_refreshes_ticket(dash, coord):
+    g = dash.get("/api/config/global")["current"]
+    g["cli_executables"] = ["echo"]
+    dash.post("/api/config/global", {"data": g})
+    dash.post("/api/config/source", {"data": {"id": "trk", "name": "T", "adapter_type": "cli",
+                                              "settings": {"executable": "echo", "fields": {"external_id": "id", "title": "t"}}}})
+    post = lambda **it: coord.post("/api/sources/trk/events", {"items": [{"external_id": "X-1", "title": "Hiba", **it}]})
+    tid = post(description="leírás", comments="Anna (1):\nelső")["created"][0]
+    assert "első" in dash.get(f"/api/tickets/{tid}")["description"]
+    post(description="leírás", comments="Anna (1):\nelső\n\nBéla (2):\nmásodik")
+    t = dash.get(f"/api/tickets/{tid}")
+    assert "második" in t["description"]
+    ev = [e for e in t["events"] if e["event_type"] == "source_update"][-1]["payload"]
+    assert "második" in ev["comments"] and ev["applied"] == ["description"]

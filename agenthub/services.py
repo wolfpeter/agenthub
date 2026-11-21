@@ -871,11 +871,21 @@ def match_rule(rules, item: dict, source_id: str):
 SOURCE_FIELDS = {"title": ("title", 500), "description": ("description", None), "url": ("source_url", 1000)}
 
 
+def _source_desc(item: dict) -> str:
+    """A forráselemből képzett leírás: a forrás leírása és a legutóbbi kommentjei (SPECIFICATION 5)."""
+    desc = item.get("description") or ""
+    if item.get("comments"):
+        desc = f"{desc}\n\n---\nKommentek a forrásban:\n{item['comments']}".lstrip()
+    return desc
+
+
 def _apply_source_fields(t: Ticket, prev: dict, item: dict) -> dict:
     """A forrás írja felül a mezőt, kivéve ha ember/agent közben átírta (a ticket már nem a korábbi forrásértéket mutatja)."""
     applied, kept = [], []
     for key, (attr, limit) in SOURCE_FIELDS.items():
         new, old = (item.get(key) or ""), (prev.get(key) or "")
+        if key == "description":
+            new, old = _source_desc(item), (_source_desc(prev) if prev else "")
         new, old = (new[:limit], old[:limit]) if limit else (new, old)
         cur = getattr(t, attr) or ""
         if not new or new == cur:
@@ -931,13 +941,15 @@ def ingest(s, who: Principal, source_id: str, items: list[dict], error: str | No
                 t = s.get(Ticket, target) if target else t
         if t is not None:
             payload = {k: item.get(k) for k in ("title", "description", "url", "sender") if item.get(k)}
+            if item.get("comments") and item.get("comments") != (prev or {}).get("comments"):
+                payload["comments"] = item["comments"]  # új komment: az eseménytörténetbe, a leírást nem írja át
             if t.external_id == ext:  # ugyanaz az elem változott, nem egy szál új levele
                 payload.update(_apply_source_fields(t, prev or {}, item))
             event(s, t, who, "source_update", payload=payload)
             t.updated_at = now()
             out["updated"].append(t.id)
         else:
-            t = Ticket(title=item["title"][:500], description=item.get("description") or "", source_id=src.id,
+            t = Ticket(title=item["title"][:500], description=_source_desc(item), source_id=src.id,
                        external_id=ext, thread_id=item.get("thread_id"), source_url=item.get("url"),
                        created_by="coordinator", status="NEW")
             s.add(t)
