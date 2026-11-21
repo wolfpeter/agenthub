@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # AgentHub telepítő (SPECIFICATION 3.1). Használat:
 #   curl -fsSL https://raw.githubusercontent.com/wolfpeter/agenthub/main/scripts/install.sh | bash
-# Változók: AGENTHUB_HOME (alap: ~/AgentHub), AGENTHUB_REPO, AGENTHUB_PORT (alap: 8790), AGENTHUB_BIND,
+# Változók: AGENTHUB_HOME (alap: ~/AgentHub), AGENTHUB_REPO, AGENTHUB_PORT (alap: 8790), AGENTHUB_BIND (egy cím),
+#           AGENTHUB_ALLOW_PUBLIC=1 (nyilvános internetről is; alapból csak LAN, Tailscale, helyi gép),
 #           AGENTHUB_INSTANCE (Compose-projektnév), AGENTHUB_SKIP_SKILLS=1
 set -euo pipefail
 

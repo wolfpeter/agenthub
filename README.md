@@ -27,7 +27,7 @@ A telepítő:
 
 A Claude Code CLI-t (`claude`) külön kell telepíteni.
 
-Változók: `AGENTHUB_HOME`, `AGENTHUB_PORT` (alap 8790), `AGENTHUB_BIND` (alap 0.0.0.0, ami a LAN-t és a Tailscale-t is jelenti; nyilvános internetre ne tedd ki), `AGENTHUB_INSTANCE`, `AGENTHUB_SKIP_SKILLS=1`.
+Változók: `AGENTHUB_HOME`, `AGENTHUB_PORT` (alap 8790), `AGENTHUB_BIND` (alap 0.0.0.0; egy címre szűkíti a figyelést), `AGENTHUB_ALLOW_PUBLIC=1` (alapból az API csak LAN-ról, Tailscale-ről és a helyi gépről fogad kérést, nyilvános internetes címről nem), `AGENTHUB_INSTANCE`, `AGENTHUB_SKIP_SKILLS=1`.
 
 Ha a telepítés már megvan, ugyanez a parancs frissít: mentést készít, lehúzza a `main` ágat, migrál, majd health checket futtat.
 

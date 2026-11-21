@@ -513,3 +513,11 @@ def test_request_log_has_correlation_fields(client, dash, caplog):
     ctx = next(x.ctx for x in records if getattr(x, "ctx", {}).get("request_id") == "abc123")
     assert ctx["ticket_id"] == 999999 and ctx["status"] == 404 and ctx["actor"]
     assert _json.loads(appmod._JsonLog().format(records[-1]))["request_id"] == "abc123"
+
+
+def test_network_guard_blocks_public_clients():
+    from agenthub.api.app import _private_client
+    for ok in ("127.0.0.1", "10.1.2.3", "172.20.0.1", "192.168.0.151", "100.110.55.26", "::1", "::ffff:192.168.1.5", "testclient"):
+        assert _private_client(ok), ok
+    for bad in ("8.8.8.8", "172.32.0.1", "100.128.0.1", "2001:4860::1", None, ""):
+        assert not _private_client(bad), bad

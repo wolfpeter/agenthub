@@ -387,7 +387,7 @@ Egyprojekt-telepítésben a projektválasztó elrejthető; többprojekt-telepít
 
 Finom animációk: kártyamozgás, státuszváltás, hover, toast, skeleton és számlálóátmenet. Kerülendők a felesleges grafikonok és üres adminpanelek.
 
-A Dashboard LAN-ról és Tailscale-en keresztül is elérhető legyen. Alapértelmezésben ne legyen nyilvános internetre kitéve.
+A Dashboard LAN-ról és Tailscale-en keresztül is elérhető legyen. Alapértelmezésben ne legyen nyilvános internetre kitéve. Megvalósítás: a szolgáltatás minden címen figyel, de az API csak privát (LAN), Tailscale (100.64.0.0/10) és helyi címről érkező kérést szolgál ki; nyilvános címről 403-at ad. Az `AGENTHUB_ALLOW_PUBLIC=1` ezt feloldja (pl. saját reverse proxy mögött), az `AGENTHUB_BIND` pedig egyetlen címre szűkíti a figyelést. Korlát: a szűrés a kliens forráscímére épül, amelyet a Docker alapbeállítása (rootful, iptables) megőriz. Rootless Dockernél vagy IPv6-os port-továbbításnál a kliens a Docker átjárójának címével érkezhet, és a szűrő átengedi; ilyenkor tűzfal vagy `AGENTHUB_BIND` kell.
 
 ## 16. API és valós idejű frissítés
 

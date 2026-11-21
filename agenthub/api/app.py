@@ -1,5 +1,6 @@
 """AgentHub REST API + SSE. Minden végpont szerveroldalon ellenőrzi a szerepet és a projektet (SPECIFICATION 16, 18)."""
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -61,6 +62,28 @@ app = FastAPI(title="AgentHub", version=__version__, docs_url="/api/docs", opena
 
 
 _TICKET_PATH = re.compile(r"/api/tickets/(\d+)")
+
+
+# LAN, Tailscale (CGNAT) és helyi gép; nyilvános internetről alapból nem (SPECIFICATION 15)
+_PRIVATE_NETS = [ipaddress.ip_network(n) for n in ("127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+                                                     "100.64.0.0/10", "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10")]
+ALLOW_PUBLIC = os.environ.get("AGENTHUB_ALLOW_PUBLIC", "0") == "1"
+
+
+def _private_client(host: str | None) -> bool:
+    try:
+        ip = ipaddress.ip_address(host or "")
+    except ValueError:
+        return host in ("testclient", "localhost")
+    ip = ip.ipv4_mapped or ip if isinstance(ip, ipaddress.IPv6Address) else ip
+    return any(ip in n for n in _PRIVATE_NETS if n.version == ip.version)
+
+
+@app.middleware("http")
+async def _network_guard(request: Request, call_next):
+    if not ALLOW_PUBLIC and not _private_client(request.client.host if request.client else None):
+        return JSONResponse({"detail": "Az AgentHub nyilvános internetről nem érhető el (AGENTHUB_ALLOW_PUBLIC=1 engedi)."}, 403)
+    return await call_next(request)
 
 
 @app.middleware("http")

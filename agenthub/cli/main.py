@@ -167,6 +167,7 @@ def cmd_init(a):
             f"POSTGRES_PASSWORD={pysecrets.token_urlsafe(24)}",
             f"AGENTHUB_PORT={a.port}",
             f"AGENTHUB_BIND={a.bind}",
+            f"AGENTHUB_ALLOW_PUBLIC={'1' if os.environ.get('AGENTHUB_ALLOW_PUBLIC') == '1' else '0'}",
             f"AGENTHUB_INSTANCE={a.instance}",
             f"AGENTHUB_UID={os.getuid()}",
             f"AGENTHUB_GID={os.getgid()}",
@@ -193,7 +194,9 @@ def cmd_init(a):
     out({"home": str(h), "created_keys": created})
 
 
-def addresses(port: str) -> list[str]:
+def addresses(port: str, bind: str = "0.0.0.0") -> list[str]:
+    if bind not in ("0.0.0.0", "", "::"):
+        return [f"http://{bind}:{port}"]
     ips = []
     try:
         ips += subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=5).stdout.split()
@@ -205,10 +208,13 @@ def addresses(port: str) -> list[str]:
 
 def cmd_welcome(a):
     """A telepítés végén egyszer kiírja a Dashboard címét és kulcsát (SPECIFICATION 3.1, 18.1)."""
-    port = envfile().get("AGENTHUB_PORT", "8790")
+    env = envfile()
+    port = env.get("AGENTHUB_PORT", "8790")
     print("\nAgentHub kész.\n\nDashboard:")
-    for u in addresses(port):
+    for u in addresses(port, env.get("AGENTHUB_BIND", "0.0.0.0")):
         print(f"  {u}")
+    if env.get("AGENTHUB_ALLOW_PUBLIC") != "1":
+        print("  (LAN-ról, Tailscale-ről és erről a gépről érhető el; nyilvános internetes címről nem.)")
     print(f"\nDashboard-kulcs (első belépéshez; később: agenthub key show):\n  {read_key('dashboard.key')}\n")
     print("Következő lépések:\n  agenthub project add --id <azonosító> --name <név> --dir <projekt könyvtára>")
     print("  Coordinator:  agenthub coordinator command   (kiírja az indítóparancsot)")
