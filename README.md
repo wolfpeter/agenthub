@@ -54,8 +54,10 @@ A Dashboardon:
 - `worker.instructions` (projektenként) és `coordinator_instructions` (globális): a helyi szabályok. Ütközéskor ezek az irányadók a skillek alapszabályaival szemben.
 - `worker.allowed_tools`, `coordinator_allowed_tools` és a permission mode: például MCP-eszközök a közvetlen írásokhoz.
 - `outbound_approval` (a Dashboard „Kimenő kommunikáció” dobozában kapcsolható) és `outbound_tools`: kikapcsolt kimenő kommunikációnál a Coordinator és a Workerek csak jóváhagyással írnak ki; az itt felsorolt eszközök a sessionjeikben tiltottak.
+- `agent_language` (alap „magyar”): az ágensek ezen a nyelven írnak mindent, amit ember olvas (konzol, note, kérdés, javaslat, összefoglaló).
 - `coordinator_review_every` (alap 2): a Coordinator minden N-edik körében átnézi a nyitott, nem a Workernél lévő ticketeket, és a forrás valós állapotához igazítja őket (`agenthub coordinator review`); a lezártakat nem. 0 = kikapcsolva.
 - `worker.review_required: false`: a Worker emberi átvétel nélkül is lezárhat.
+- A Worker kérdése mindig javaslattal jön (`ticket ask --suggest` kötelező): a Dashboardon egy kattintással elfogadod, vagy mást írsz.
 - `worker_gate_command`: helyi script, amely a Worker elé kapuként áll (pl. kvótafigyelés).
 - CLI-forrás: bármilyen JSON-t adó script (pl. piros pipeline, figyelő scriptek).
 - Élesítés: `finish --to release` → „Kész – kiadásra vár”; a kiadás után `agenthub release list` és `agenthub release done`.

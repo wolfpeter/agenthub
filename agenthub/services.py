@@ -626,7 +626,9 @@ def ask(s, who: Principal, tid: int, question: str, context: str = "", suggested
     t = _own_in_progress(s, who, tid, instance_id, lease_id)
     if not question.strip():
         raise Invalid("üres kérdés")
-    q = TicketQuestion(ticket_id=t.id, question=question.strip(), context=context or "", suggested_answer=suggested,
+    if not (suggested or "").strip():  # a Dashboardon egy kattintással elfogadható, vagy más válasz írható
+        raise Invalid("javaslat kötelező (--suggest): egy elfogadható válasz a kérdésre")
+    q = TicketQuestion(ticket_id=t.id, question=question.strip(), context=context or "", suggested_answer=suggested.strip(),
                        created_by=who.actor)
     s.add(q)
     s.flush()

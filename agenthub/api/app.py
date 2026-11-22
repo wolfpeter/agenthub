@@ -669,6 +669,7 @@ def worker_context(p: Principal = Worker):
                 "control": sv.control_state(s, f"worker:{p.project_id}"),
                 "wait_timeout_s": sv.global_config(s).worker_wait_timeout_s,
                 "outbound_approval": sv.global_config(s).outbound_approval,
+                "language": sv.global_config(s).agent_language,
                 "memory": [{"id": k.id, "category": k.category, "title": k.title} for k in mem]}
 
 
@@ -947,7 +948,7 @@ def coordinator_context(request: Request, p: Principal = Coord):
                 "poll_interval_s": gc.coordinator_poll_interval_s, "model": gc.coordinator_model,
                 "cli_executables": gc.cli_executables, "instructions": gc.coordinator_instructions or None,
                 "outbound_approval": gc.outbound_approval,
-                "review_every": gc.coordinator_review_every,
+                "review_every": gc.coordinator_review_every, "language": gc.agent_language,
                 "sources": [ser.row(x) for x in s.scalars(select(Source).where(Source.is_active.is_(True)))],
                 "projects": [{"id": x.id, "name": x.name} for x in s.scalars(select(Project).where(Project.is_active.is_(True)))]}
 

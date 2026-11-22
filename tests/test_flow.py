@@ -93,6 +93,8 @@ def test_question_answer_resume_review_accept(dash, two_projects):
     wa, _ = two_projects
     t = new(dash, start_approved=True)
     nxt(wa)
+    wa.post(f"/api/tickets/{t['id']}/ask", {"question": "Melyik ág?"}, ok=400)  # javaslat nélkül nem kérdezhet
+    wa.post(f"/api/tickets/{t['id']}/ask", {"question": "Melyik ág?", "suggested_answer": "  "}, ok=400)
     q = wa.post(f"/api/tickets/{t['id']}/ask", {"question": "Melyik ág?", "suggested_answer": "main"})
     assert dash.get(f"/api/tickets/{t['id']}")["status"] == "WAITING_FOR_INPUT"
     assert nxt(wa) == {"idle": True}

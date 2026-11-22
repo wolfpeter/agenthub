@@ -417,7 +417,7 @@ def cmd_worker(a):
         out({"project": pid, "instance": st["instance_id"], "control": ctx["control"],
              "interrupted_ticket": {"id": t["id"], "title": t["title"]} if t else None,
              "instructions": reg["project"]["worker"].get("instructions") or None,
-             "outbound_approval": ctx.get("outbound_approval", False),
+             "outbound_approval": ctx.get("outbound_approval", False), "language": ctx.get("language"),
              "memory": [f"{m['category']}: {m['title']}" for m in ctx["memory"]],
              "inventory": [f["path"] for f in inv["files"] if f["kind"] != "doc"][:30]})
         return
@@ -714,7 +714,8 @@ def cmd_coordinator(a):
             save_state("coordinator", st)
         out({"instance": st["instance_id"], "control": ctx["control"], "model": ctx["model"],
              "sources": [x["id"] for x in ctx["sources"]], "projects": ctx["projects"],
-             "instructions": ctx.get("instructions"), "outbound_approval": ctx.get("outbound_approval", False)})
+             "instructions": ctx.get("instructions"), "outbound_approval": ctx.get("outbound_approval", False),
+             "language": ctx.get("language")})
         return
     api = coord_api()
     if a.action == "wait":
@@ -1066,7 +1067,7 @@ def main(argv=None):
     r = tparser("ask")
     r.add_argument("--question", required=True)
     r.add_argument("--context")
-    r.add_argument("--suggest")
+    r.add_argument("--suggest", required=True, help="javasolt válasz, amit a Dashboardon egy kattintással elfogadhatnak")
     for name in ("finish", "fail"):
         r = tparser(name)
         if name == "finish":
