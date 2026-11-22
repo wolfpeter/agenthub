@@ -672,6 +672,7 @@ def worker_context(p: Principal = Worker):
                 "wait_timeout_s": sv.global_config(s).worker_wait_timeout_s,
                 "outbound_approval": sv.global_config(s).outbound_approval,
                 "language": sv.global_config(s).agent_language,
+                "shared_instructions": sv.global_config(s).worker_instructions or None,
                 "memory": [{"id": k.id, "category": k.category, "title": k.title} for k in mem]}
 
 

@@ -772,3 +772,12 @@ def test_manual_mail_copy_and_confirm(dash, two_projects):
     assert dash.get(f"/api/tickets/{t['id']}")["status"] == "PENDING_APPROVAL"
     dash.post(f"/api/actions/{a['id']}/decide", {"decision": "manual", "note": "elküldve"})
     assert dash.get(f"/api/tickets/{t['id']}")["status"] == "READY"
+
+
+def test_shared_worker_instructions_reach_every_project(dash, two_projects):
+    wa, wb = two_projects
+    assert wa.get("/api/worker/context")["shared_instructions"] is None
+    g = dash.get("/api/config/global")["current"]
+    dash.post("/api/config/global", {"data": {**g, "worker_instructions": "közös szabály"}})
+    assert wa.get("/api/worker/context")["shared_instructions"] == "közös szabály"
+    assert wb.get("/api/worker/context")["shared_instructions"] == "közös szabály"

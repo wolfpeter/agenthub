@@ -416,7 +416,9 @@ def cmd_worker(a):
         t = reg.get("interrupted_ticket")
         out({"project": pid, "instance": st["instance_id"], "control": ctx["control"],
              "interrupted_ticket": {"id": t["id"], "title": t["title"]} if t else None,
-             "instructions": reg["project"]["worker"].get("instructions") or None,
+             "instructions": "\n\n".join(f"[{k}]\n{v}" for k, v in (
+                 ("all projects", ctx.get("shared_instructions")),
+                 ("this project, wins on conflict", reg["project"]["worker"].get("instructions"))) if v) or None,
              "outbound_approval": ctx.get("outbound_approval", False), "language": ctx.get("language"),
              "memory": [f"{m['category']}: {m['title']}" for m in ctx["memory"]],
              "inventory": [f["path"] for f in inv["files"] if f["kind"] != "doc"][:30]})

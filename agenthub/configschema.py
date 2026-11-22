@@ -57,6 +57,8 @@ class GlobalConfig(Strict):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     # A Coordinator telepítésre szabott része (a Worker projektenkénti beállításának megfelelője)
     coordinator_instructions: str = ""
+    # Minden projekt Workerére érvényes helyi szabály; a projekt saját instructions-a ütközésnél felülírja
+    worker_instructions: str = ""
     coordinator_allowed_tools: list[str] = Field(default_factory=list)
     coordinator_denied_tools: list[str] = Field(default_factory=list)
     coordinator_permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "default"

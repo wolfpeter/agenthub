@@ -51,7 +51,7 @@ A Dashboardon:
 - Hotfixnek jelölöd a sürgős javítást: a Worker elsőként veszi fel, és a projekt utasítása szerint teszt után élesíti.
 
 **Testreszabás a célgépen, az AgentHub módosítása nélkül:**
-- `worker.instructions` (projektenként) és `coordinator_instructions` (globális): a helyi szabályok. Ütközéskor ezek az irányadók a skillek alapszabályaival szemben.
+- `worker.instructions` (projektenként), `worker_instructions` (globális, minden projekt Workerére) és `coordinator_instructions` (globális): a helyi szabályok. Ütközéskor ezek az irányadók a skillek alapszabályaival szemben, a két Worker-szabály közül a projekté.
 - `worker.allowed_tools`, `coordinator_allowed_tools` és a permission mode: például MCP-eszközök a közvetlen írásokhoz.
 - `outbound_approval` (a Dashboard „Kimenő kommunikáció” dobozában kapcsolható) és `outbound_tools`: kikapcsolt kimenő kommunikációnál a Coordinator és a Workerek csak jóváhagyással írnak ki; az itt felsorolt eszközök a sessionjeikben tiltottak.
 - `agent_language` (alap „magyar”): az ágensek ezen a nyelven írnak mindent, amit ember olvas (konzol, note, kérdés, javaslat, összefoglaló).
