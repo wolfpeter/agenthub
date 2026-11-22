@@ -64,6 +64,22 @@ export function useRun() {
   }, [toast])
 }
 
+// vágólap: http-n (pl. Tailscale-címről) a navigator.clipboard nem érhető el, ott a régi út
+export async function copyText(t: string) {
+  try { await navigator.clipboard.writeText(t); return } catch { /* nem biztonságos környezet */ }
+  const ta = Object.assign(document.createElement('textarea'), { value: t })
+  ta.style.position = 'fixed'; ta.style.opacity = '0'
+  ;(document.querySelector('dialog[open]') ?? document.body).appendChild(ta)
+  ta.select(); const ok = document.execCommand('copy'); ta.remove()
+  if (!ok) throw new Error('A másolás nem sikerült; jelöld ki kézzel')
+}
+
+export function CopyBtn({ text, label = 'Másolás' }: { text: string; label?: string }) {
+  const run = useRun()
+  const [done, setDone] = useState(false)
+  return <button className="btn sm" onClick={async () => { if (await run(() => copyText(text).then(() => true))) { setDone(true); setTimeout(() => setDone(false), 1500) } }}>{done ? '✓ Másolva' : label}</button>
+}
+
 export const Skel = ({ h = 60 }: { h?: number }) => <div className="skel" style={{ height: h }} />
 
 export function Diff({ text }: { text: string }) {

@@ -851,6 +851,11 @@ def propose_action(s, who: Principal, tid: int | None, target: str, action_type:
         raise Invalid("a Worker csak tickethez kötve javasolhat műveletet")
     if target == "file":
         _check_file_payload(s, who, payload)
+    if target == "email":  # a Dashboard ebből másolható levelet mutat
+        if action_type != "send":
+            raise Invalid("levélnél csak 'send' művelet van")
+        if missing := [k for k in ("to", "subject", "body") if not payload.get(k)]:
+            raise Invalid(f"a levélből hiányzik: {', '.join(missing)} (to, subject, body kötelező; cc, in_reply_to opcionális)")
     a = PendingAction(ticket_id=t.id if t else None, project_id=t.project_id if t else who.project_id,
                       action_type=action_type, target_system=target, target_reference=reference,
                       proposed_payload=payload, payload_hash=phash(payload), status="PENDING_APPROVAL",

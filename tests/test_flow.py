@@ -758,3 +758,17 @@ def test_coordinator_review_never_touches_worker_tickets(dash, coord, two_projec
     coord.post(f"/api/tickets/{idle['id']}/coordinator", {"action": "dismiss", "reason": "a kártya archiválva"})
     assert dash.get(f"/api/tickets/{busy['id']}")["status"] == "COMPLETED"
     assert dash.get(f"/api/tickets/{idle['id']}")["status"] == "CANCELLED"
+
+
+def test_manual_mail_copy_and_confirm(dash, two_projects):
+    wa, _ = two_projects
+    t = new(dash, "alpha", start_approved=True)
+    nxt(wa)
+    url = f"/api/tickets/{t['id']}/actions"
+    wa.post(url, {"target_system": "email", "action_type": "send", "payload": {"to": "a@b.hu", "subject": "Tárgy"}}, ok=400)
+    a = wa.post(url, {"target_system": "email", "action_type": "send",
+                      "payload": {"to": ["a@b.hu"], "subject": "Tárgy", "body": "Szia!\n\nKész."}})
+    assert dash.get("/api/state")["controls"]["email_writer"] is False  # nincs küldő adapter: ember küldi
+    assert dash.get(f"/api/tickets/{t['id']}")["status"] == "PENDING_APPROVAL"
+    dash.post(f"/api/actions/{a['id']}/decide", {"decision": "manual", "note": "elküldve"})
+    assert dash.get(f"/api/tickets/{t['id']}")["status"] == "READY"

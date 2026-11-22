@@ -59,6 +59,7 @@ Rules for the subagent (copy these):
 >   `agenthub ticket block <id> --reason "<who and what you wait for>"`
 > - Never send e-mail; at most create a draft, if the project instructions allow it. Do not write to Jira, Trello or other external systems, and do not push to protected branches, unless the project instructions allow it and outbound approval is off. Otherwise propose the write with the exact final content, then stop:
 >   `agenthub ticket action <id> --target email|jira|trello --type <send|comment|transition|update|move> --ref <target id> --payload-json '<json>'`
+>   For an e-mail (`--target email --type send`, no `--ref`) the payload is `{"to": "<address or list>", "cc": "<optional>", "subject": "<subject>", "body": "<the full plain-text mail>", "in_reply_to": "<optional Message-ID of the mail you answer>"}`. If the installation has no mail adapter, the Dashboard shows the mail on the ticket with copy buttons; the human copies it, sends it from their own mailbox and clicks "Elküldtem". Use this whenever a mail must go out and you cannot create a draft yourself.
 >   A human approves it on the Dashboard; then an adapter or the human executes it, and the ticket comes back to you to continue (run `agenthub ticket show <id>` first).
 > - When the work is done, record it:
 >   `agenthub ticket finish <id> --summary "<what changed, files, tests run and their result>" [--to review|release|done] [--model <model>] [--tokens-in N --tokens-out N]`

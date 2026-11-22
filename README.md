@@ -58,6 +58,7 @@ A Dashboardon:
 - `coordinator_review_every` (alap 2): a Coordinator minden N-edik körében átnézi a nyitott, nem a Workernél lévő ticketeket, és a forrás valós állapotához igazítja őket (`agenthub coordinator review`); a lezártakat nem. 0 = kikapcsolva.
 - `worker.review_required: false`: a Worker emberi átvétel nélkül is lezárhat.
 - A Worker kérdése mindig javaslattal jön (`ticket ask --suggest` kötelező): a Dashboardon egy kattintással elfogadod, vagy mást írsz.
+- Levél, amit az ágens nem tud elküldeni (`ticket action --target email --type send`): levélküldő adapter nélkül a ticketnél „Elküldendő levél” dobozban jelenik meg, mezőnként másolható; kimásolod, elküldöd, és az „Elküldtem” gombbal rögzíted, a ticket pedig visszamegy a Workerhez.
 - `worker_gate_command`: helyi script, amely a Worker elé kapuként áll (pl. kvótafigyelés).
 - CLI-forrás: bármilyen JSON-t adó script (pl. piros pipeline, figyelő scriptek).
 - Élesítés: `finish --to release` → „Kész – kiadásra vár”; a kiadás után `agenthub release list` és `agenthub release done`.

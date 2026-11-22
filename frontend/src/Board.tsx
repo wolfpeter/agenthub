@@ -25,6 +25,7 @@ export default function Board({ S, proj, onOpen }: { S: State; proj: string; onO
   const tickets = S.tickets.filter(t => !proj || !t.project_id || t.project_id === proj)
   const pname = (id: string | null) => id ? S.projects.find(p => p.id === id)?.name ?? id : null
   const showProj = S.projects.length > 1 && !proj  // a kiválasztott projektfülön fölösleges
+  const mailFor = new Set(S.actions.filter(a => a.target_system === 'email' && ['PENDING_APPROVAL', 'APPROVED', 'FAILED'].includes(a.status)).map(a => a.ticket_id))
   const events = S.events.filter(e => !proj || !e.project_id || e.project_id === proj)
   return (
     <LayoutGroup>
@@ -35,7 +36,7 @@ export default function Board({ S, proj, onOpen }: { S: State; proj: string; onO
             <Column key={c.key} id={c.key} title={c.title} fold={c.fold}
               count={ts.length} extra={c.key === 'ready' ? `${ts.filter(t => t.start_approved).length} bepipálva` : c.key === 'blocked' && ts.some(t => YOURS.includes(t.status)) ? `${ts.filter(t => YOURS.includes(t.status)).length} rád vár` : undefined}>
               <AnimatePresence initial={false}>
-                {ts.map(t => <Card key={t.id} t={t} proj={showProj ? pname(t.project_id) : null} onOpen={onOpen} />)}
+                {ts.map(t => <Card key={t.id} t={t} proj={showProj ? pname(t.project_id) : null} onOpen={onOpen} mail={mailFor.has(t.id)} />)}
               </AnimatePresence>
               {ts.length === 0 && <div className="text-mut text-[12px] px-1">nincs ticket</div>}
             </Column>
@@ -75,7 +76,7 @@ function Column({ id, title, count, extra, fold, wide, children }: { id: string;
   )
 }
 
-function Card({ t, proj, onOpen }: { t: Ticket; proj: string | null; onOpen: (id: number) => void }) {
+function Card({ t, proj, onOpen, mail }: { t: Ticket; proj: string | null; onOpen: (id: number) => void; mail?: boolean }) {
   const run = useRun()
   const coord = t.start_approved_by === 'coordinator'
   return (
@@ -91,7 +92,8 @@ function Card({ t, proj, onOpen }: { t: Ticket; proj: string | null; onOpen: (id
         {t.status === 'BLOCKED' && <span className="tag" title={t.last_error ?? ''}>külső félre vár</span>}
         {t.status === 'FAILED' && <span className="tag text-bad" title={t.last_error ?? ''}>hiba</span>}
         {t.status === 'NEEDS_TRIAGE' && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>besorolás kell</span>}
-        {t.status === 'PENDING_APPROVAL' && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>rád vár: jóváhagyás</span>}
+        {mail ? <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>rád vár: levél elküldése</span>
+          : t.status === 'PENDING_APPROVAL' && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>rád vár: jóváhagyás</span>}
         {t.status === 'WAITING_FOR_INPUT' && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>rád vár: kérdés</span>}
         {t.status === 'REVIEW' && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>rád vár: ellenőrzés</span>}
         {t.status === 'CANCELLED' && <span className="tag">megszakítva</span>}

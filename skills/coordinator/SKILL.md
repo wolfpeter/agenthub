@@ -74,7 +74,8 @@ Print one line per update: `#<id> <reopened|priority n|noted|—>: <reason>`.
 
 When `outbound_approval` is true, propose each outbound write and stop there:
 `agenthub coordinator action <id> --target trello|jira|email --type <comment|move|update|send> --ref <card or issue id> --payload-json '{"text": "<the exact text>"}'`
-A human approves it in the Approval center; an adapter or the human then executes it. Write the final text: it is approved as it is. Then continue as if it was written (for an answer-only item: `coordinator done`, with "jóváhagyásra vár" in the reason).
+A human approves it in the Approval center; an adapter or the human then executes it.
+For an e-mail (`--target email --type send`, no `--ref`) the payload is `{"to": "<address or list>", "cc": "<optional>", "subject": "<subject>", "body": "<the full plain-text mail>", "in_reply_to": "<optional Message-ID of the mail you answer>"}`. If the installation has no mail adapter, the Dashboard shows the mail on the ticket with copy buttons; the human copies it, sends it from their own mailbox and clicks "Elküldtem". Use this whenever a mail must go out and you cannot create a draft yourself. Keep the ticket open until then (`note` "levél elküldésre vár"), do not close it with `done`. Write the final text: it is approved as it is. Then continue as if it was written (for an answer-only item: `coordinator done`, with "jóváhagyásra vár" in the reason).
 
 ## Status review (`review_due`)
 

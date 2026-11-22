@@ -318,7 +318,9 @@ def state(p: Principal = Dash):
             "projects": projects, "tickets": tlist, "questions": qs, "actions": actions, "knowledge": knowledge,
             "agents": agents, "sources": sources, "events": events,
             "controls": {"coordinator": sv.control_state(s, "coordinator"),
-                         "outbound_approval": gc.outbound_approval},
+                         "outbound_approval": gc.outbound_approval,
+                         # nincs levélküldő adapter: a levelet a Dashboardról kimásolva ember küldi el
+                         "email_writer": sv.writer_config(s).email is not None},
             "usage_24h": {"runs": usage[0], "tokens_in": usage[1], "tokens_out": usage[2], "cost_usd": usage[3]},
             "coordinator_poll_interval_s": gc.coordinator_poll_interval_s,
             "last_cycle": sv.last_cycle(s),

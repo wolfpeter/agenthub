@@ -27,6 +27,7 @@ export default function TicketDialog({ id, S, onClose }: { id: number; S: State;
   const srcDesc = src?.kept_local?.includes('description') ? src?.description?.trim() : null
   const openQs = d.questions.filter(q => q.status === 'OPEN')
   const doneQs = d.questions.filter(q => q.status !== 'OPEN')
+  const mails = d.actions.filter(a => a.target_system === 'email' && ['PENDING_APPROVAL', 'APPROVED', 'FAILED'].includes(a.status))
   const tabs: [string, string, number | null][] = [
     ['desc', 'Leírás', null], ['comments', 'Kommentek a forrásban', srcComments.length], ['notes', 'Munkajegyzetek', desc.notes.length],
     ['qs', 'Megválaszolt kérdések', doneQs.length], ['actions', 'Műveletek', d.actions.length], ['history', 'Előzmények', d.events.length],
@@ -66,6 +67,9 @@ export default function TicketDialog({ id, S, onClose }: { id: number; S: State;
       <div className="flex flex-col md:flex-row gap-4 mt-3">
         {/* bal: amit olvasni kell */}
         <div className="flex-1 min-w-0">
+          {mails.length > 0 && <Box t={`Elküldendő levél (${mails.length})`} c="var(--warn)">
+            <div className="text-[12px] text-mut mb-1">Másold ki, küldd el a leveleződből, majd nyomd meg az „Elküldtem” gombot.</div>
+            {mails.map(a => <ActionCard key={a.id} a={a} emailWriter={S.controls.email_writer} />)}</Box>}
           {openQs.length > 0 && <Box t={`Rád vár (${openQs.length})`} c="var(--warn)">{openQs.map(q => <Q key={q.id} q={q} onDone={reload} />)}</Box>}
           {d.last_error && <Box t={st === 'BLOCKED' ? 'Mire vár' : 'Utolsó hiba'} c="var(--bad)"><Text s={d.last_error} /></Box>}
           {d.result_summary && <Box t="Eredmény" c="var(--ok)"><Text s={d.result_summary} /></Box>}
@@ -88,7 +92,7 @@ export default function TicketDialog({ id, S, onClose }: { id: number; S: State;
           {cur === 'notes' && <div className="flex flex-col gap-2">{[...desc.notes].reverse().map((n, i) => (
             <div key={i} className="text-[13px]"><span className="text-mut text-[12px]">{n.at} · {n.who}</span><div className="whitespace-pre-wrap break-words"><Text s={n.text} /></div></div>))}</div>}
           {cur === 'qs' && doneQs.map(q => <Q key={q.id} q={q} onDone={reload} />)}
-          {cur === 'actions' && d.actions.map(a => <ActionCard key={a.id} a={a} />)}
+          {cur === 'actions' && d.actions.map(a => <ActionCard key={a.id} a={a} emailWriter={S.controls.email_writer} />)}
           {cur === 'history' && <History events={d.events} />}
           {cur === 'runs' && (
             <table className="w-full text-[12px]"><thead><tr className="text-left text-mut"><th>Modell</th><th>Token (be/ki)</th><th>Költség</th><th>Eredmény</th><th>Kezdés</th></tr></thead>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ago, post, type Action, type State } from './api'
-import { Diff, useRun } from './ui'
+import { CopyBtn, Diff, useRun } from './ui'
 
 const ST_HU: Record<string, string> = {
   PENDING_APPROVAL: 'jóváhagyásra vár', APPROVED: 'jóváhagyva', EXECUTING: 'végrehajtás alatt', EXECUTED: 'végrehajtva', MANUALLY_CONFIRMED: 'kézzel végrehajtva',
@@ -8,12 +8,14 @@ const ST_HU: Record<string, string> = {
 }
 const OPEN = ['PENDING_APPROVAL', 'APPROVED', 'FAILED']
 
-export function ActionCard({ a, onOpen }: { a: Action; onOpen?: (id: number) => void }) {
+export function ActionCard({ a, onOpen, emailWriter }: { a: Action; onOpen?: (id: number) => void; emailWriter?: boolean }) {
   const run = useRun()
   const [note, setNote] = useState('')
   const decide = (decision: string, ok: string) => run(() => post(`/api/actions/${a.id}/decide`, { decision, note: note || undefined }), ok)
   const info = a.execution_result?.info
   const p = a.proposed_payload ?? {}
+  // levélküldő adapter nélkül a levelet ember küldi el: kimásolja, elküldi, és itt rögzíti
+  const manualMail = a.target_system === 'email' && !emailWriter
   return (
     <div className="card p-2.5 mb-2" data-action={a.id}>
       <div className="flex flex-wrap gap-2 items-center text-[12px]">
@@ -22,7 +24,7 @@ export function ActionCard({ a, onOpen }: { a: Action; onOpen?: (id: number) => 
         <span className={'tag ' + (a.status === 'PENDING_APPROVAL' ? 'text-warn' : '')}>{ST_HU[a.status] ?? a.status}</span>
         <span className="text-mut ml-auto">{ago(a.created_at)}{a.ticket_id && onOpen ? <> · <a href="#/approval" onClick={e => { e.preventDefault(); onOpen(a.ticket_id!) }}>#{a.ticket_id}</a></> : ''}</span>
       </div>
-      {a.target_system === 'file' ? (
+      {a.target_system === 'email' ? <Mail p={p} /> : a.target_system === 'file' ? (
         <>{p.path && <div className="text-[12px] text-mut mt-1">Fájl: {p.path}</div>}<Diff text={a.diff || '(nincs eltérés)'} /></>
       ) : typeof p.text === 'string' ? (
         <>{Object.keys(p).length > 1 && <pre className="code">{JSON.stringify({ ...p, text: undefined }, null, 2)}</pre>}
@@ -34,10 +36,28 @@ export function ActionCard({ a, onOpen }: { a: Action; onOpen?: (id: number) => 
       {OPEN.includes(a.status) && (
         <div className="flex flex-wrap gap-2 items-center mt-1">
           <input className="inp !w-56" placeholder="Megjegyzés (opcionális)" value={note} onChange={e => setNote(e.target.value)} />
-          {a.status === 'PENDING_APPROVAL' && <button className="btn ok" onClick={() => decide('approve', 'Jóváhagyva')}>Jóváhagy</button>}
-          {a.status !== 'FAILED' && <button className="btn bad" onClick={() => decide('reject', 'Elutasítva')}>Elutasít</button>}
-          <button className="btn" onClick={() => decide('manual', 'Kézi végrehajtás rögzítve')}>Kézzel végrehajtottam</button>
+          {manualMail ? <>
+            <button className="btn ok" onClick={() => decide('manual', 'Rögzítve: elküldve')}>Elküldtem</button>
+            {a.status !== 'FAILED' && <button className="btn bad" onClick={() => decide('reject', 'Elvetve')}>Nem küldöm el</button>}
+          </> : <>
+            {a.status === 'PENDING_APPROVAL' && <button className="btn ok" onClick={() => decide('approve', 'Jóváhagyva')}>Jóváhagy</button>}
+            {a.status !== 'FAILED' && <button className="btn bad" onClick={() => decide('reject', 'Elutasítva')}>Elutasít</button>}
+            <button className="btn" onClick={() => decide('manual', 'Kézi végrehajtás rögzítve')}>{a.target_system === 'email' ? 'Elküldtem kézzel' : 'Kézzel végrehajtottam'}</button></>}
         </div>)}
+    </div>)
+}
+
+// a levél mezői külön másolhatók, hogy a levelezőbe beilleszthetők legyenek
+function Mail({ p }: { p: any }) {
+  const list = (v: any) => Array.isArray(v) ? v.join(', ') : v ? String(v) : ''
+  const rows: [string, string][] = [['Címzett', list(p.to)], ['Másolat', list(p.cc)], ['Tárgy', p.subject ?? '']]
+  return (
+    <div className="mt-1.5 flex flex-col gap-1 text-[13px]">
+      {rows.filter(([, v]) => v).map(([k, v]) => (
+        <div key={k} className="flex gap-2 items-center"><span className="text-mut w-16 flex-none">{k}:</span><b className="min-w-0 break-all">{v}</b><CopyBtn text={v} /></div>))}
+      {p.in_reply_to && <div className="text-mut text-[12px]">Válasz erre a levélre: {p.in_reply_to}</div>}
+      <div className="flex gap-2 items-center mt-1"><span className="text-mut">Szöveg:</span><CopyBtn text={p.body ?? ''} label="Szöveg másolása" /></div>
+      <div className="txt !max-h-[50vh]">{p.body}</div>
     </div>)
 }
 
@@ -48,6 +68,6 @@ export default function Approval({ S, onOpen }: { S: State; onOpen: (id: number)
     <div className="p-4 max-w-4xl">
       <h2 className="text-base font-semibold m-0 mb-2">Jóváhagyási központ</h2>
       {list.length === 0 && <div className="text-mut">Nincs művelet.</div>}
-      {list.map(a => <ActionCard key={a.id} a={a} onOpen={onOpen} />)}
+      {list.map(a => <ActionCard key={a.id} a={a} onOpen={onOpen} emailWriter={S.controls.email_writer} />)}
     </div>)
 }
