@@ -70,29 +70,37 @@ function Shell({ onLogout }: { onLogout: () => void }) {
 
   const logout = async () => { await post('/api/logout').catch(() => {}); onLogout() }
   const pending = S?.actions.filter(a => a.status === 'PENDING_APPROVAL').length ?? 0
+  const wst = (id: string) => S?.projects.find(p => p.id === id)?.worker_control === 'stop' ? 'leállítva'
+    : S?.agents.some(a => a.role === 'worker' && a.project_id === id && a.alive) ? 'fut' : 'nem fut'
 
-  return (
-    <>
-      <header className="flex flex-wrap gap-2 items-stretch px-4 py-1.5 border-b border-line bg-card md:sticky top-0 z-10">
-        {S ? <HeaderBoxes S={S} reload={load} /> : <div className="flex gap-2 flex-1"><div className="w-40"><Skel h={46} /></div><div className="w-40"><Skel h={46} /></div></div>}
-        <div className="flex items-center gap-2 ml-auto">
+  const actionsSlot = (
+        <div className="flex items-center gap-2 ml-auto pl-2">
           <button className="btn pri" onClick={() => setCreating(true)}>+ Új feladat</button>
           <span className="text-[12px] text-mut whitespace-nowrap" title={live ? 'Élő kapcsolat' : 'Újracsatlakozás…'}>
             <span className={'dot ' + (live ? 'on' : 'off')} />{live ? 'élő' : 'újracsatlakozás…'}
           </span>
           <button className="btn" onClick={logout}>Kilépés</button>
         </div>
+  )
+  return (
+    <>
+      <header className="flex flex-wrap gap-2 items-stretch px-4 py-1.5 border-b border-line bg-card md:sticky top-0 z-10">
+        {S ? <HeaderBoxes S={S} reload={load} proj={proj} /> : <div className="flex gap-2 flex-1"><div className="w-40"><Skel h={46} /></div><div className="w-40"><Skel h={46} /></div></div>}
         {S && S.projects.length > 1 && (
-          <nav className="basis-full flex flex-wrap gap-1 pt-1.5 mt-0.5 border-t border-line" aria-label="Projektek">
+          <nav className="basis-full flex flex-wrap items-center gap-1 pt-1.5 mt-0.5 border-t border-line" aria-label="Projektek">
             {[{ id: '', name: 'Minden projekt' }, ...S.projects].map(p => {
               // várakozó: még nem lezárt ticket (a projekt nélküliek a „Minden projekt” alatt)
               const n = S.tickets.filter(t => !FINAL.includes(t.status) && (!p.id || t.project_id === p.id)).length
               return (
-                <button key={p.id} className={'btn !py-0.5 ' + (proj === p.id ? 'pri' : '')} aria-pressed={proj === p.id} onClick={() => setProj(p.id)}>
+                <button key={p.id} className={'btn !py-0.5 ' + (proj === p.id ? 'pri' : '')} aria-pressed={proj === p.id} onClick={() => setProj(p.id)}
+                  title={p.id ? `Worker: ${wst(p.id)}` : undefined}>
+                  {p.id && <span className="dot" style={{ background: wst(p.id) === 'fut' ? 'var(--ok)' : wst(p.id) === 'leállítva' ? 'var(--bad)' : 'var(--p3)' }} />}
                   {p.name} <span className={proj === p.id ? '' : 'text-mut'}>({n})</span></button>)
             })}
+            {actionsSlot}
           </nav>
         )}
+        {!(S && S.projects.length > 1) && actionsSlot}
       </header>
       <nav className="flex flex-wrap gap-1 px-4 pt-2" aria-label="Nézetek">
         {VIEWS.map(([k, t]) => (
@@ -116,7 +124,33 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   )
 }
 
-function HeaderBoxes({ S, reload }: { S: State; reload: () => void }) {
+// sok projektnél is alacsony marad: összesítő, a részletek a kiválasztott projektnél (a projektfülön)
+function WorkersBox({ S, proj, toggle, St }: { S: State; proj: string; toggle: (n: string, l: string, s: string) => void; St: any }) {
+  const alive = (id: string) => S.agents.find(a => a.role === 'worker' && a.project_id === id && a.alive)
+  const run = S.projects.filter(p => alive(p.id)).length, stop = S.projects.filter(p => !alive(p.id) && p.worker_control === 'stop').length
+  const rows = proj ? S.projects.filter(p => p.id === proj) : S.projects.length <= 1 ? S.projects : S.projects.filter(p => alive(p.id) || p.over_budget)
+  return (
+    <div className="box" title={!proj && S.projects.length > 1 ? 'Egy projekt Workerét a projektfülére kattintva kezeled' : undefined}><h3>Workerek</h3>
+      {S.projects.length === 0 ? <span className="text-mut">nincs projekt</span> : S.projects.length > 1 &&
+        <div><b className="text-ok">{run} fut</b> · {stop > 0 ? <b className="text-bad">{stop} leállítva</b> : '0 leállítva'} · {S.projects.length - run - stop} nem fut
+</div>}
+      <div className="max-h-[66px] overflow-auto">
+        {rows.map(p => {
+          const w = alive(p.id)
+          return (
+            <div key={p.id} className="flex gap-2 items-center flex-wrap">
+              {S.projects.length > 1 && <span className="text-mut">{p.name}:</span>}
+              <St alive={!!w} control={p.worker_control} />
+              <span className="text-mut">{w ? `${w.active_ticket_id ? '#' + w.active_ticket_id : 'tétlen'} · ${ago(w.last_heartbeat)}` : ''}</span>
+              {p.monthly_budget_usd != null && <span className={p.over_budget ? 'text-bad font-semibold' : 'text-mut'} title="Havi költség a kerethez képest (becslés)">
+                ~${(p.month_cost_usd ?? 0).toFixed(2)} / ${p.monthly_budget_usd.toFixed(2)}{p.over_budget && ' · keret túllépve'}</span>}
+              <button className="btn sm" onClick={() => toggle('worker:' + p.id, `a(z) ${p.name} workert`, p.worker_control)}>{p.worker_control === 'stop' ? 'Engedélyez' : 'Leállít'}</button>
+            </div>)
+        })}</div>
+    </div>)
+}
+
+function HeaderBoxes({ S, reload, proj }: { S: State; reload: () => void; proj: string }) {
   const run = useRun()
   const { confirm } = useUI()
   const u = S.usage_24h
@@ -152,25 +186,17 @@ function HeaderBoxes({ S, reload }: { S: State; reload: () => void }) {
             reload()
           }} />
           {S.controls.outbound_approval ? <b className="text-warn">csak jóváhagyással</b> : <span className="text-ok">engedélyezve</span>}</label></div>
-      <div className="box"><h3>Workerek</h3>
-        {S.projects.length === 0 && <span className="text-mut">nincs projekt</span>}
-        {S.projects.map(p => {
-          const w = S.agents.find(a => a.role === 'worker' && a.project_id === p.id && a.alive)
-          return (
-            <div key={p.id} className="flex gap-2 items-center flex-wrap">
-              {S.projects.length > 1 && <span className="text-mut">{p.name}:</span>}
-              <St alive={!!w} control={p.worker_control} />
-              <span className="text-mut">{w ? `${w.active_ticket_id ? '#' + w.active_ticket_id : 'tétlen'} · ${ago(w.last_heartbeat)}` : ''}</span>
-              {p.monthly_budget_usd != null && <span className={p.over_budget ? 'text-bad font-semibold' : 'text-mut'} title="Havi költség a kerethez képest (becslés)">
-                ~${(p.month_cost_usd ?? 0).toFixed(2)} / ${p.monthly_budget_usd.toFixed(2)}{p.over_budget && ' · keret túllépve'}</span>}
-              <button className="btn" onClick={() => toggle('worker:' + p.id, `a(z) ${p.name} workert`, p.worker_control)}>{p.worker_control === 'stop' ? 'Engedélyez' : 'Leállít'}</button>
-            </div>)
-        })}</div>
-      <div className="box"><h3>Források</h3>
-        {S.sources.length === 0 && <span className="text-mut">nincs forrás</span>}
-        {S.sources.map(s => (
-          <div key={s.id} className="flex gap-2"><span>{s.name}:</span><span className="text-mut">{s.last_poll_at ? hm(s.last_poll_at) : 'még nem futott'}</span>
-            {s.last_error && <span className="text-bad truncate max-w-[220px]" title={s.last_error}>hiba: {s.last_error}</span>}</div>))}</div>
+      <WorkersBox S={S} proj={proj} toggle={toggle} St={St} />
+      <div className="box" title={S.sources.map(x => `${x.name}: ${x.last_poll_at ? hm(x.last_poll_at) : 'még nem futott'}${x.last_error ? ' · hiba: ' + x.last_error : ''}`).join('\n')}>
+        <h3>Források</h3>
+        {S.sources.length === 0 ? <span className="text-mut">nincs forrás</span> : (() => {
+          const errs = S.sources.filter(x => x.last_error)
+          const last = S.sources.map(x => x.last_poll_at).filter(Boolean).sort().pop()
+          return <>
+            <div>{S.sources.length} forrás · utolsó lekérdezés {last ? hm(last) : '—'}{errs.length === 0 && <span className="text-ok"> · rendben</span>}</div>
+            {errs.map(x => <div key={x.id} className="text-bad truncate max-w-[260px]">{x.name}: {x.last_error}</div>)}
+          </>
+        })()}</div>
     </>
   )
 }
