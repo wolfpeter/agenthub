@@ -49,7 +49,7 @@ export interface Ev { id: number; ticket_id: number; event_type: string; old_sta
 export interface State {
   installation: string; version: string; now: string; projects: Project[]; tickets: Ticket[]; questions: Question[]
   actions: Action[]; knowledge: Knowledge[]; agents: Agent[]; sources: Source[]; events: Ev[]
-  controls: { coordinator: string; coordinator_outbound_approval: boolean }; usage_24h: { runs: number; tokens_in: number | null; tokens_out: number | null; cost_usd: number | null }
+  controls: { coordinator: string; outbound_approval: boolean }; usage_24h: { runs: number; tokens_in: number | null; tokens_out: number | null; cost_usd: number | null }
   last_cycle: { at: string; sources_checked: number; created: number; updated: number; routed: number; pending: number; errors: string[] } | null
 }
 

@@ -328,7 +328,7 @@ def _agent_rules(role: str) -> tuple[list[str], list[str]]:
     return allow, deny
 
 
-def claude_settings(project: dict, all_projects: list[dict]) -> dict:
+def claude_settings(project: dict, all_projects: list[dict], gc: dict | None = None) -> dict:
     """Projektizoláció Claude Code permission-szabályokkal (SPECIFICATION 18)."""
     allow, deny = _agent_rules("worker")
     for other in all_projects:
@@ -336,9 +336,11 @@ def claude_settings(project: dict, all_projects: list[dict]) -> dict:
             wd = other["working_directory"]
             deny += [f"Read(/{wd}/**)", f"Edit(/{wd}/**)"]
     wc = (project.get("config") or {}).get("worker", {})
-    perms = {"deny": [*deny, *wc.get("denied_tools", [])], "allow": [*allow, *wc.get("allowed_tools", [])],
-             "defaultMode": wc.get("permission_mode", "acceptEdits")}
-    out = {"permissions": perms, "env": {"AGENTHUB_ROLE": "worker", "AGENTHUB_PROJECT": project["id"]}}
+    gate = bool((gc or {}).get("outbound_approval"))
+    perms = {"deny": [*deny, *wc.get("denied_tools", []), *((gc or {}).get("outbound_tools", []) if gate else [])],
+             "allow": [*allow, *wc.get("allowed_tools", [])], "defaultMode": wc.get("permission_mode", "acceptEdits")}
+    out = {"permissions": perms, "env": {"AGENTHUB_ROLE": "worker", "AGENTHUB_PROJECT": project["id"],
+                                         "AGENTHUB_OUTBOUND_APPROVAL": "1" if gate else "0"}}
     if wc.get("hooks"):
         out["hooks"] = wc["hooks"]
     return out
@@ -354,9 +356,10 @@ def cmd_worker(a):
             die(f"nincs ilyen projekt: {pid}")
         sf = home() / "data" / "projects" / pid / "claude-settings.json"
         sf.parent.mkdir(parents=True, exist_ok=True)
-        sf.write_text(json.dumps(claude_settings(p, projects), indent=2))
+        gc = api.get("/api/config/global")["current"]
+        sf.write_text(json.dumps(claude_settings(p, projects, gc), indent=2))
         # a fő session csak vezényel (a ticketet alügynök viszi): a projekt modellje, különben a globális alapmodell
-        model = (p.get("config") or {}).get("worker", {}).get("model") or api.get("/api/config/global")["current"]["models"]["default"]
+        model = (p.get("config") or {}).get("worker", {}).get("model") or gc["models"]["default"]
         running = api.get(f"/api/tickets?project={pid}&status=IN_PROGRESS")
         sess = running[0].get("claude_session_id") if running else None
         if sess:
@@ -388,6 +391,7 @@ def cmd_worker(a):
         out({"project": pid, "instance": st["instance_id"], "control": ctx["control"],
              "interrupted_ticket": {"id": t["id"], "title": t["title"]} if t else None,
              "instructions": reg["project"]["worker"].get("instructions") or None,
+             "outbound_approval": ctx.get("outbound_approval", False),
              "memory": [f"{m['category']}: {m['title']}" for m in ctx["memory"]],
              "inventory": [f["path"] for f in inv["files"] if f["kind"] != "doc"][:30]})
         return
@@ -401,8 +405,8 @@ def cmd_worker(a):
         while True:
             apply_file_actions(api, pid)
             gate = _gate(api)
-            if gate is True:
-                out({"stop": True})
+            if gate is True or isinstance(gate, dict):
+                out(gate if isinstance(gate, dict) else {"stop": True})
                 return
             if gate:  # a helyi kapu (pl. kvóta) most nem enged munkát: várunk, lefoglalás nélkül
                 if time.time() + 60 >= end:
@@ -428,12 +432,22 @@ def cmd_worker(a):
         out({"stopped": True})
 
 
+def _outbound_changed(ctx: dict, cmd: str) -> str | None:
+    """A tiltások a session indulásakor rögzülnek: a kimenő jóváhagyás váltása után csak újraindítva érvényes."""
+    started = os.environ.get("AGENTHUB_OUTBOUND_APPROVAL")
+    if started is None or (started == "1") == bool(ctx.get("outbound_approval")):
+        return None
+    return f"A kimenő kommunikáció beállítása megváltozott: indítsd újra az `agenthub {cmd}` által kiírt paranccsal."
+
+
 def _gate(api: Api) -> str | bool | None:
     """worker_gate_command: a jelölt ticket JSON-ja stdin-en; 0 = mehet, más = ne most (stdout első sora az ok).
-    True: a Workert leállították a Dashboardon."""
+    True: a Workert leállították a Dashboardon. dict: le kell állni, indoklással."""
     pk = api.get("/api/worker/peek")
     if pk.get("stop"):
         return True
+    if reason := _outbound_changed(pk, "worker command"):
+        return {"stop": True, "reason": reason}
     if not pk.get("gate") or not pk.get("ticket"):
         return None
     try:
@@ -644,10 +658,9 @@ def cmd_coordinator(a):
     if a.action == "command":
         allow, deny = _agent_rules("coordinator")
         gc = admin().get("/api/config/global")["current"]
-        gate = bool(gc.get("coordinator_outbound_approval"))
+        gate = bool(gc.get("outbound_approval"))
         perms = {"allow": [*allow, *gc.get("coordinator_allowed_tools", [])],
-                 "deny": [*deny, *gc.get("coordinator_denied_tools", []),
-                          *(gc.get("coordinator_outbound_tools", []) if gate else [])]}
+                 "deny": [*deny, *gc.get("coordinator_denied_tools", []), *(gc.get("outbound_tools", []) if gate else [])]}
         if gc.get("coordinator_permission_mode", "default") != "default":
             perms["defaultMode"] = gc["coordinator_permission_mode"]
         sf = home() / "data" / "coordinator-settings.json"
@@ -685,11 +698,8 @@ def cmd_coordinator(a):
             if ctx["control"] == "stop":
                 out({"stop": True})
                 return
-            started = os.environ.get("AGENTHUB_OUTBOUND_APPROVAL")
-            if started is not None and (started == "1") != bool(ctx.get("outbound_approval")):
-                # a tiltások a session indulásakor rögzülnek: váltás után csak újraindítva érvényes
-                out({"stop": True, "reason": "A kimenő jóváhagyás beállítása megváltozott: indítsd újra a Coordinatort "
-                                             "az `agenthub coordinator command` által kiírt paranccsal."})
+            if reason := _outbound_changed(ctx, "coordinator command"):
+                out({"stop": True, "reason": reason})
                 return
             next_due = end
             cycle = {"sources_checked": 0, "created": 0, "updated": 0, "routed": 0, "errors": []}

@@ -51,7 +51,7 @@ A Dashboardon:
 **Testreszabás a célgépen, az AgentHub módosítása nélkül:**
 - `worker.instructions` (projektenként) és `coordinator_instructions` (globális): a helyi szabályok. Ütközéskor ezek az irányadók a skillek alapszabályaival szemben.
 - `worker.allowed_tools`, `coordinator_allowed_tools` és a permission mode: például MCP-eszközök a közvetlen írásokhoz.
-- `coordinator_outbound_approval` (a Dashboard Koordinátor dobozában kapcsolható) és `coordinator_outbound_tools`: a Coordinator kimenő kommunikációja csak jóváhagyással megy ki; az itt felsorolt eszközök a sessionjében tiltottak.
+- `outbound_approval` (a Dashboard „Kimenő kommunikáció” dobozában kapcsolható) és `outbound_tools`: kikapcsolt kimenő kommunikációnál a Coordinator és a Workerek csak jóváhagyással írnak ki; az itt felsorolt eszközök a sessionjeikben tiltottak.
 - `worker.review_required: false`: a Worker emberi átvétel nélkül is lezárhat.
 - `worker_gate_command`: helyi script, amely a Worker elé kapuként áll (pl. kvótafigyelés).
 - CLI-forrás: bármilyen JSON-t adó script (pl. piros pipeline, figyelő scriptek).

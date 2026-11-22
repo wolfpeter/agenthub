@@ -159,7 +159,7 @@ def test_agent_session_cannot_run_admin_commands(env, capsys, monkeypatch):
     assert "Bash(agenthub:*)" not in perms["allow"]
     assert "Bash(agenthub key:*)" in perms["deny"] and "Bash(agenthub coordinator:*)" in perms["deny"]
     assert "Bash(agenthub worker command:*)" in perms["deny"] and "Bash(agenthub ticket:*)" in perms["allow"]
-    assert st["env"] == {"AGENTHUB_ROLE": "worker", "AGENTHUB_PROJECT": "demo"}
+    assert st["env"] == {"AGENTHUB_ROLE": "worker", "AGENTHUB_PROJECT": "demo", "AGENTHUB_OUTBOUND_APPROVAL": "0"}
     monkeypatch.setenv("AGENTHUB_ROLE", "worker")
     monkeypatch.setenv("AGENTHUB_PROJECT", "demo")
     for args in (["key", "show"], ["config", "export"], ["coordinator", "go", "1", "--reason", "x"],
@@ -359,18 +359,18 @@ def test_coordinator_wait_reports_updates_once(env, capsys):
     assert run(capsys, "coordinator", "set", str(tid), "--priority", "1")["priority"] == 1
 
 
-def test_coordinator_outbound_approval(env, capsys, monkeypatch):
+def test_outbound_approval(env, capsys, monkeypatch):
     home, proj = env
     run(capsys, "project", "add", "--id", "demo", "--dir", str(proj))
     admin = cli.admin()
     g = admin.get("/api/config/global")["current"]
-    g["coordinator_outbound_tools"] = ["mcp__trello__comment"]
+    g["outbound_tools"] = ["mcp__trello__comment"]
     admin.post("/api/config/global", {"data": g})
     run(capsys, "coordinator", "command")
     st = json.loads((home / "data/coordinator-settings.json").read_text())
     assert "mcp__trello__comment" not in st["permissions"]["deny"]  # kikapcsolva: közvetlen írás
-    assert admin.post("/api/coordinator/outbound-approval", {"value": True})["value"] is True  # Dashboard-kapcsoló
-    assert admin.get("/api/state")["controls"]["coordinator_outbound_approval"] is True
+    assert admin.post("/api/outbound-approval", {"value": True})["value"] is True  # Dashboard-kapcsoló
+    assert admin.get("/api/state")["controls"]["outbound_approval"] is True
     run(capsys, "coordinator", "command")
     st = json.loads((home / "data/coordinator-settings.json").read_text())
     assert "mcp__trello__comment" in st["permissions"]["deny"] and st["env"]["AGENTHUB_OUTBOUND_APPROVAL"] == "1"
@@ -384,6 +384,13 @@ def test_coordinator_outbound_approval(env, capsys, monkeypatch):
     assert any("Szia! Kint van." in (e["payload"] or {}).get("text", "") for e in d["events"] if e["event_type"] == "note")
     a = admin.post(f"/api/actions/{r['action_id']}/decide", {"decision": "approve"})
     assert a["status"] == "APPROVED"  # író adapter nélkül kézi végrehajtásra vár
-    admin.post("/api/coordinator/outbound-approval", {"value": False})  # váltás: a futó session leáll
+    lines = run(capsys, "worker", "command", "--project", "demo")  # a Workerre is vonatkozik
+    ws = json.loads((home / "data/projects/demo/claude-settings.json").read_text())
+    assert "mcp__trello__comment" in ws["permissions"]["deny"] and ws["env"]["AGENTHUB_OUTBOUND_APPROVAL"] == "1"
+    admin.post("/api/outbound-approval", {"value": False})  # váltás: a futó session leáll
     w = run(capsys, "coordinator", "wait", "--timeout", "1")
     assert w["stop"] is True and "újra" in w["reason"]
+    monkeypatch.chdir(proj)
+    run(capsys, "worker", "start")
+    w = run(capsys, "worker", "wait", "--timeout", "1")
+    assert w["stop"] is True and "worker command" in w["reason"]

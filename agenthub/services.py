@@ -130,9 +130,11 @@ def restart_notice(scope: str, scope_id: str, old: dict | None, new: dict) -> st
             return (f"A Worker jogosultságai változtak. Indítsd újra a(z) {scope_id} Worker Claude-sessionjét az "
                     f"`agenthub worker command --project {scope_id}` által kiírt paranccsal. Ha a könyvtár változott, "
                     "a többi projekt Workerét is.")
+    if scope == "global" and any(old.get(k) != new.get(k) for k in ("outbound_approval", "outbound_tools")):
+        return ("A kimenő kommunikáció beállítása változott: a futó Coordinator és Workerek a következő körben leállnak; "
+                "indítsd újra őket az `agenthub coordinator command`, illetve `agenthub worker command` által kiírt paranccsal.")
     if scope == "global" and any(old.get(k) != new.get(k) for k in (
-            "coordinator_model", "coordinator_allowed_tools", "coordinator_denied_tools", "coordinator_permission_mode",
-            "coordinator_outbound_approval", "coordinator_outbound_tools")):
+            "coordinator_model", "coordinator_allowed_tools", "coordinator_denied_tools", "coordinator_permission_mode")):
         return ("A Coordinator modellje vagy jogosultságai változtak: az `agenthub coordinator command` paranccsal "
                 "indítsd újra a sessiont.")
     return None
@@ -788,7 +790,7 @@ def propose_action(s, who: Principal, tid: int | None, target: str, action_type:
     s.flush()
     if t is not None:
         event(s, t, who, "action_proposed", payload={"action_id": a.id, "target": target, "type": action_type})
-        if who.role == "coordinator":  # a jóváhagyott írás visszhangja így felismerhető (recent_notes)
+        if True:  # a jóváhagyott írás visszhangja így felismerhető (recent_notes)
             text = payload.get("text") or json.dumps(payload, ensure_ascii=False)
             event(s, t, who, "note", payload={"text": f"Jóváhagyásra javasolva (#{a.id}): {target} {action_type}: {text}"[:4000]})
         if t.status == "IN_PROGRESS":

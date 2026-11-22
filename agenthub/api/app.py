@@ -317,7 +317,7 @@ def state(p: Principal = Dash):
             "projects": projects, "tickets": tlist, "questions": qs, "actions": actions, "knowledge": knowledge,
             "agents": agents, "sources": sources, "events": events,
             "controls": {"coordinator": sv.control_state(s, "coordinator"),
-                         "coordinator_outbound_approval": gc.coordinator_outbound_approval},
+                         "outbound_approval": gc.outbound_approval},
             "usage_24h": {"runs": usage[0], "tokens_in": usage[1], "tokens_out": usage[2], "cost_usd": usage[3]},
             "coordinator_poll_interval_s": gc.coordinator_poll_interval_s,
             "last_cycle": sv.last_cycle(s),
@@ -569,8 +569,9 @@ def worker_peek(request: Request, p: Principal = Worker):
         if sv.control_state(s, f"worker:{p.project_id}") == "stop":
             return {"stop": True}
         t = sv.peek_ticket(s, p)
+        gc = sv.global_config(s)
         return {"ticket": ser.ticket(t, brief=True) if t else None,
-                "gate": sv.global_config(s).worker_gate_command}
+                "gate": gc.worker_gate_command, "outbound_approval": gc.outbound_approval}
 
 
 @app.get("/api/worker/next")
@@ -611,6 +612,7 @@ def worker_context(p: Principal = Worker):
         return {"project": sv.project_config(pr).model_dump(mode="json"),
                 "control": sv.control_state(s, f"worker:{p.project_id}"),
                 "wait_timeout_s": sv.global_config(s).worker_wait_timeout_s,
+                "outbound_approval": sv.global_config(s).outbound_approval,
                 "memory": [{"id": k.id, "category": k.category, "title": k.title} for k in mem]}
 
 
@@ -881,7 +883,7 @@ def coordinator_context(request: Request, p: Principal = Coord):
         return {"control": sv.control_state(s, "coordinator"),
                 "poll_interval_s": gc.coordinator_poll_interval_s, "model": gc.coordinator_model,
                 "cli_executables": gc.cli_executables, "instructions": gc.coordinator_instructions or None,
-                "outbound_approval": gc.coordinator_outbound_approval,
+                "outbound_approval": gc.outbound_approval,
                 "sources": [ser.row(x) for x in s.scalars(select(Source).where(Source.is_active.is_(True)))],
                 "projects": [{"id": x.id, "name": x.name} for x in s.scalars(select(Project).where(Project.is_active.is_(True)))]}
 
@@ -1037,13 +1039,13 @@ class FlagIn(BaseModel):
     value: bool
 
 
-@app.post("/api/coordinator/outbound-approval")
+@app.post("/api/outbound-approval")
 def outbound_approval(body: FlagIn, p: Principal = Dash):
-    """Dashboard-kapcsoló: a Coordinator kimenő írása csak jóváhagyással (új konfigverzióként mentve)."""
+    """Dashboard-kapcsoló: a Coordinator és a Workerek kimenő írása csak jóváhagyással (új konfigverzióként mentve)."""
     with db.session() as s:
         g = sv.global_config(s).model_dump(mode="json")
-        if g["coordinator_outbound_approval"] != body.value:
-            g["coordinator_outbound_approval"] = body.value
+        if g["outbound_approval"] != body.value:
+            g["outbound_approval"] = body.value
             sv.save_config(s, p, "global", g, "kimenő jóváhagyás " + ("be" if body.value else "ki"))
     return {"value": body.value}
 
