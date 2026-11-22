@@ -27,7 +27,7 @@ A telepítő:
 
 A Claude Code CLI-t (`claude`) külön kell telepíteni.
 
-Változók: `AGENTHUB_PROJECTS_ROOT` (a Dashboard mappaválasztójának gyökere, pl. `~/Projects`; csak olvashatóan csatolódik, a Dashboard csak a könyvtárneveket látja; üresen a választó ki van kapcsolva), `AGENTHUB_HOME`, `AGENTHUB_PORT` (alap 8790), `AGENTHUB_BIND` (alap 0.0.0.0; egy címre szűkíti a figyelést), `AGENTHUB_ALLOW_PUBLIC=1` (alapból az API csak LAN-ról, Tailscale-ről és a helyi gépről fogad kérést, nyilvános internetes címről nem), `AGENTHUB_INSTANCE`, `AGENTHUB_SKIP_SKILLS=1`. Több címre kötéshez (pl. csak localhost és Tailscale) a telepítés könyvtárában egy `compose.override.yaml` felülírhatja az `api` szolgáltatás `ports` listáját (`ports: !override`); az `agenthub` parancsok ezt is betöltik.
+Változók: `AGENTHUB_PROJECTS_ROOT` (a Dashboard mappaválasztójának gyökere, pl. `~/Projects`; csak olvashatóan csatolódik, a Dashboard csak a könyvtárneveket látja; üresen a választó ki van kapcsolva), `AGENTHUB_HOME`, `AGENTHUB_PORT` (alap 8790), `AGENTHUB_BIND` (alap 0.0.0.0; egy címre szűkíti a figyelést), `AGENTHUB_ALLOW_PUBLIC=1` (alapból az API csak LAN-ról, Tailscale-ről és a helyi gépről fogad kérést, nyilvános internetes címről nem), `AGENTHUB_NAME` (a gép neve a böngészőfül címében: „<név> – AgentHub”), `AGENTHUB_INSTANCE`, `AGENTHUB_SKIP_SKILLS=1`. Több címre kötéshez (pl. csak localhost és Tailscale) a telepítés könyvtárában egy `compose.override.yaml` felülírhatja az `api` szolgáltatás `ports` listáját (`ports: !override`); az `agenthub` parancsok ezt is betöltik.
 
 Ha a telepítés már megvan, ugyanez a parancs frissít: mentést készít, lehúzza a `main` ágat, migrál, majd health checket futtat.
 

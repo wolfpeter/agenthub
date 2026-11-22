@@ -56,6 +56,8 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   const [addingProject, setAddingProject] = useState(false)
 
   const load = useCallback(() => get<State>('/api/state').then(setS).catch(() => {}), [])
+  // a böngészőfül címe: melyik gép AgentHubja (AGENTHUB_NAME a .env-ben)
+  useEffect(() => { get<{ name: string | null }>('/api/me').then(m => { if (m.name) document.title = `${m.name} – AgentHub` }).catch(() => {}) }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => {
     let timer: number

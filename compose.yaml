@@ -36,6 +36,7 @@ services:
     environment:
       AGENTHUB_DATABASE_URL: postgresql+psycopg://agenthub:${POSTGRES_PASSWORD}@db:5432/agenthub
       AGENTHUB_SECRETS_DIR: /secrets
+      AGENTHUB_NAME: ${AGENTHUB_NAME:-}
       AGENTHUB_DATA_DIR: /data
       AGENTHUB_ALLOW_PUBLIC: ${AGENTHUB_ALLOW_PUBLIC:-0}
       AGENTHUB_PROJECTS_ROOT_HOST: ${AGENTHUB_PROJECTS_ROOT:-}

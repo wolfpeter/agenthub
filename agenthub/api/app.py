@@ -223,7 +223,7 @@ def logout(response: Response):
 
 @app.get("/api/me")
 def me(p: Principal = Any):
-    return {"role": p.role, "project_id": p.project_id}
+    return {"role": p.role, "project_id": p.project_id, "name": os.environ.get("AGENTHUB_NAME") or None}
 
 
 class RotateIn(BaseModel):
