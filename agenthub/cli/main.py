@@ -757,8 +757,13 @@ def cmd_coordinator(a):
             if ups["cursor"] != st.get("updates_cursor"):
                 st["updates_cursor"] = ups["cursor"]  # a kimenet a modellé; újra nem adjuk ki
                 save_state("coordinator", st)
+            if pending or ups["updates"] or time.time() >= end:
+                every = ctx.get("review_every", 0)
+                st["cycles"] = st.get("cycles", 0) + 1
+                save_state("coordinator", st)
+                due = {"review_due": True} if every and st["cycles"] % every == 0 else {}
             if pending or ups["updates"]:
-                out({**({"pending": [{"id": t["id"], "title": t["title"], "description": (t.get("description") or "")[:400],
+                out({**due, **({"pending": [{"id": t["id"], "title": t["title"], "description": (t.get("description") or "")[:400],
                                       "source": t.get("source_id"), "url": t.get("source_url"),
                                       **({"similar": t["similar"]} if t.get("similar") else {})} for t in pending]}
                         if pending else {}),
@@ -766,7 +771,7 @@ def cmd_coordinator(a):
                      "projects": ctx["projects"], "ingested": totals})
                 return
             if time.time() >= end:
-                out({"idle": True, "ingested": totals})
+                out({"idle": True, **due, "ingested": totals})
                 return
             time.sleep(max(1, min(30, next_due - time.time(), end - time.time())))
     elif a.action == "classify":
@@ -784,6 +789,8 @@ def cmd_coordinator(a):
         r = api.post(f"/api/tickets/{a.id}/actions", {"target_system": a.target, "action_type": a.type,
                                                       "target_reference": a.ref, "payload": json.loads(_text(a.payload_json))})
         out({"action_id": r["id"], "status": r["status"]})
+    elif a.action == "review":
+        out({"tickets": api.get("/api/coordinator/review")})
     elif a.action == "show":
         t = api.get(f"/api/tickets/{a.id}")
         t["events"] = [{k: e[k] for k in ("event_type", "new_status", "actor_type", "payload", "created_at")}
@@ -1135,6 +1142,7 @@ def main(argv=None):
     r.add_argument("--add", help="új információ a meglévő tickethez ('-' = stdin, '@fájl')")
     r = xs.add_parser("show", help="a ticket részletei és előzményei (megjegyzések, válaszok)")
     r.add_argument("id", type=int)
+    xs.add_parser("review", help="állapot-egyeztetéshez: a nyitott (nem a Workernél lévő) ticketek a forrás listájával")
     r = xs.add_parser("action", help="kimenő írás javaslata: a Dashboardon jóváhagyás után hajtódik végre")
     r.add_argument("id", type=int)
     r.add_argument("--target", required=True, choices=["trello", "jira", "email"])
@@ -1143,7 +1151,7 @@ def main(argv=None):
     r.add_argument("--payload-json", required=True, help="pl. '{\"text\": \"...\"}' ('-' = stdin, '@fájl')")
     for name, hlp in (("reopen", "újranyitás új bemenetre (REVIEW/AWAITING_RELEASE/COMPLETED/BLOCKED/FAILED → READY)"),
                       ("set", "prioritás vagy cím módosítása"), ("done", "kész munka nélkül (pl. megválaszolt kérdés)"),
-                      ("dismiss", "nem munka (pl. automata levél): NEW → CANCELLED"), ("note", "megjegyzés a tickethez")):
+                      ("dismiss", "nem munka, vagy a forrásban törölt/archivált: NEW/READY/BLOCKED → CANCELLED"), ("note", "megjegyzés a tickethez")):
         r = xs.add_parser(name, help=hlp)
         r.add_argument("id", type=int)
         r.add_argument("--reason", required=name != "set", help="indoklás vagy szöveg ('-' = stdin, '@fájl')")

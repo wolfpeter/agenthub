@@ -29,6 +29,7 @@ Repeat until the wait command returns `{"stop":true}` or the user interrupts.
    - `{"idle":true,...}`: print nothing, or one short line if `ingested` shows activity or `errors`. Go back to step 1.
    - `{"stop":true}`: print the `reason` if it has one, otherwise "Coordinator leállítva a Dashboardról.", and stop.
    - `{"pending":[...]}` and/or `{"updates":[...]}`: classify each pending ticket and handle each update (below), then go back to step 1.
+   - If the result also has `"review_due": true`, do a status review (below) after the rest, then go back to step 1.
 
 ## Classifying a pending ticket
 
@@ -63,7 +64,7 @@ An update means the source changed under a ticket that already exists: a new com
 
 Other verbs:
 - `agenthub coordinator done <id> --reason "<what was answered>"`: the item needed only an answer, and it was given (only if the instructions let you answer).
-- `agenthub coordinator dismiss <id> --reason "<why>"`: a NEW item that is not work at all (automated notice, newsletter).
+- `agenthub coordinator dismiss <id> --reason "<why>"`: a NEW item that is not work at all (automated notice, newsletter), or a READY/BLOCKED ticket whose item was archived, deleted or withdrawn in the source.
 
 Print one line per update: `#<id> <reopened|priority n|noted|—>: <reason>`.
 
@@ -72,6 +73,21 @@ Print one line per update: `#<id> <reopened|priority n|noted|—>: <reason>`.
 When `outbound_approval` is true, propose each outbound write and stop there:
 `agenthub coordinator action <id> --target trello|jira|email --type <comment|move|update|send> --ref <card or issue id> --payload-json '{"text": "<the exact text>"}'`
 A human approves it in the Approval center; an adapter or the human then executes it. Write the final text: it is approved as it is. Then continue as if it was written (for an answer-only item: `coordinator done`, with "jóváhagyásra vár" in the reason).
+
+## Status review (`review_due`)
+
+Every few cycles (`coordinator_review_every` in the global config, default every 2nd) check that the local tickets still match reality, because an update can be missed or misread.
+
+1. Run `agenthub coordinator review`. It lists the open tickets that are not with a Worker (`READY`, `BLOCKED`, `FAILED`, `REVIEW`, `AWAITING_RELEASE`), each with the source list last seen (`list`) and its `url`. Finished tickets (`COMPLETED`, `CANCELLED`) are not listed and are not reviewed; only a new source update reopens them.
+2. Compare each ticket's status with the real state of its item: the board list, an archived or deleted card, a closed issue, a reply in the thread. Read the source once per board or mailbox where you can, not once per ticket. The installation's `instructions` say which source state means which status.
+3. Fix only clear mismatches, each with a `--reason` naming the evidence (e.g. "a kártya a PROD-listán 11-21 óta"):
+   - the work is done or released in the source → `done`
+   - the item was archived, deleted or withdrawn → `dismiss`
+   - new work or feedback is waiting on a blocked, failed, review or release ticket → `reopen`
+   - only the priority or title is off → `set`
+   - unsure, or the evidence is indirect → `note` only, and name the ticket in your report.
+4. **Never interfere with a Worker.** Tickets that are `IN_PROGRESS`, waiting for an answer (`WAITING_FOR_INPUT`) or for an approval (`PENDING_APPROVAL`) are not listed, and the server refuses `done`, `reopen` and `dismiss` on them; you may only add a `note`, which the Worker reads. If a command fails because a Worker took the ticket meanwhile, leave it.
+5. Print one line: `Átnézés: <n> ticket, <k> javítva` and one line per fix `#<id> <old> → <new>: <reason>`. Nothing changed = only the first line.
 
 ## Rules
 

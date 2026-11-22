@@ -734,3 +734,25 @@ def test_dashboard_comment_reaches_worker(dash, two_projects):
     wa.post(f"/api/tickets/{t['id']}/note", {"text": "worker note"})
     wa.post(f"/api/tickets/{t['id']}/comment", {"text": "álcázott"}, ok=403)
     assert [c["text"] for c in wa.get(f"/api/tickets/{t['id']}")["comments"]] == ["Csak a mobil nézetet javítsd."]
+
+
+def test_coordinator_review_never_touches_worker_tickets(dash, coord, two_projects):
+    wa, _ = two_projects
+    busy = new(dash, "alpha", title="Worker dolgozik", start_approved=True)
+    rel = new(dash, "alpha", title="UAT-on kész", start_approved=True)
+    idle = new(dash, "alpha", title="Kártya archiválva")
+    assert nxt(wa)["ticket"]["id"] == busy["id"]
+    # a Workernél lévő ticketet a Coordinator nem zárja, nem nyitja, nem veti el
+    for act in ("done", "reopen", "dismiss"):
+        coord.post(f"/api/tickets/{busy['id']}/coordinator", {"action": act, "reason": "egyeztetés"}, ok=400)
+    coord.post(f"/api/tickets/{busy['id']}/coordinator", {"action": "note", "reason": "a kártya PROD-on"})
+    wa.post(f"/api/tickets/{busy['id']}/finish", {"summary": "kész", "to": "release"})
+    review = {t["id"]: t["status"] for t in coord.get("/api/coordinator/review")}
+    assert review[busy["id"]] == "AWAITING_RELEASE" and review[idle["id"]] == "READY"
+    assert nxt(wa)["ticket"]["id"] == rel["id"]
+    assert rel["id"] not in {t["id"] for t in coord.get("/api/coordinator/review")}
+    # a forrásban már élesített / archivált munka
+    coord.post(f"/api/tickets/{busy['id']}/coordinator", {"action": "done", "reason": "a kártya a PROD-listán"})
+    coord.post(f"/api/tickets/{idle['id']}/coordinator", {"action": "dismiss", "reason": "a kártya archiválva"})
+    assert dash.get(f"/api/tickets/{busy['id']}")["status"] == "COMPLETED"
+    assert dash.get(f"/api/tickets/{idle['id']}")["status"] == "CANCELLED"

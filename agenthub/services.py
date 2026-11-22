@@ -267,6 +267,7 @@ def get_ticket(s, who: Principal, tid: int, lock=False) -> Ticket:
     return t
 
 
+WORKER_HOLDS = ("IN_PROGRESS", "WAITING_FOR_INPUT", "PENDING_APPROVAL")
 REOPEN_FROM = ("REVIEW", "AWAITING_RELEASE", "COMPLETED", "BLOCKED", "FAILED")
 HOTFIX_VOID_FROM = ("REVIEW", "AWAITING_RELEASE", "COMPLETED")  # a leszállított munka újranyitása; retry, feloldás nem
 
@@ -717,6 +718,9 @@ def coordinator_act(s, who: Principal, t: Ticket, action: str, reason: str | Non
         raise Invalid("a prioritás 1, 2 vagy 3")
     if action in ("reopen", "done", "dismiss") and not reason:
         raise Invalid("indoklás kötelező")
+    if action in ("reopen", "done", "dismiss") and t.status in WORKER_HOLDS:
+        # a Worker (vagy a nála várakozó kérdés/jóváhagyás) birtokolja: a Coordinator csak note-ot írhat
+        raise Invalid(f"a #{t.id} ticket a Workernél van ({t.status}): csak note")
     if action != "note" and (priority or title):
         if t.status in states.FINAL and action != "reopen":
             raise Invalid("lezárt ticket csak újranyitással módosítható")
@@ -744,6 +748,22 @@ def coordinator_act(s, who: Principal, t: Ticket, action: str, reason: str | Non
     t.updated_at = now()
     s.flush()
     changed(ticket=t.id)
+
+
+def coordinator_review(s) -> list[dict]:
+    """Állapot-egyeztetéshez: a nyitott, nem a Workernél lévő ticketek és a forrás legutóbb látott listája."""
+    # a lezárt (Kész, Megszakítva) ticketekkel nem foglalkozik: azokat csak a forrás új bemenete nyitja újra (updates)
+    rows = s.scalars(select(Ticket).where(Ticket.status.notin_(WORKER_HOLDS + ("NEW", "NEEDS_TRIAGE") + tuple(states.FINAL)))
+                     .order_by(Ticket.id))
+    out = []
+    for t in rows:
+        src = s.scalar(select(TicketEvent).where(TicketEvent.ticket_id == t.id, TicketEvent.event_type == "source_update")
+                       .order_by(TicketEvent.id.desc()).limit(1))
+        m = re.match(r"\[[^\]\n]*Lista: ([^\]·\n]+)", t.description or "")
+        out.append({"id": t.id, "status": t.status, "project": t.project_id, "title": t.title[:120], "source": t.source_id,
+                    "url": t.source_url, "list": ((src.payload or {}).get("list") if src else None) or (m and m.group(1).strip()),
+                    "updated_at": t.updated_at.isoformat()})
+    return out
 
 
 def coordinator_updates(s, after: int | None, limit: int = 50) -> dict:

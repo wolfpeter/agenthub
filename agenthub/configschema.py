@@ -42,6 +42,8 @@ class GlobalConfig(Strict):
     installation_name: str = "AgentHub"
     coordinator_poll_interval_s: int = Field(default=600, ge=60, le=86400)
     coordinator_model: str = "haiku"
+    # a Coordinator minden N-edik körében átnézi a nyitott ticketeket a forrás valós állapotához (0 = ki)
+    coordinator_review_every: int = Field(default=2, ge=0, le=100)
     worker_wait_timeout_s: int = Field(default=540, ge=30, le=3600)
     lease_ttl_s: int = Field(default=3600, ge=300, le=86400)
     agent_stale_after_s: int = Field(default=900, ge=60, le=86400)

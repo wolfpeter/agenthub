@@ -947,6 +947,7 @@ def coordinator_context(request: Request, p: Principal = Coord):
                 "poll_interval_s": gc.coordinator_poll_interval_s, "model": gc.coordinator_model,
                 "cli_executables": gc.cli_executables, "instructions": gc.coordinator_instructions or None,
                 "outbound_approval": gc.outbound_approval,
+                "review_every": gc.coordinator_review_every,
                 "sources": [ser.row(x) for x in s.scalars(select(Source).where(Source.is_active.is_(True)))],
                 "projects": [{"id": x.id, "name": x.name} for x in s.scalars(select(Project).where(Project.is_active.is_(True)))]}
 
@@ -988,6 +989,12 @@ def coordinator_act(tid: int, body: CoordActIn, p: Principal = Coord):
         t = sv.get_ticket(s, p, tid, lock=True)
         sv.coordinator_act(s, p, t, body.action, body.reason, body.priority, body.title)
         return ser.ticket(t, brief=True)
+
+
+@app.get("/api/coordinator/review")
+def coordinator_review(p: Principal = Coord):
+    with db.session() as s:
+        return sv.coordinator_review(s)
 
 
 @app.get("/api/coordinator/pending")

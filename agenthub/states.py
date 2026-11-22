@@ -24,7 +24,6 @@ TRANSITIONS: dict[tuple[str, str], set[str]] = {
     ("BLOCKED", "READY"): {"human", "coordinator"},
     # kész, de még nincs élesítve: a kiadás után a Worker (release-folyamat) vagy ember zárja
     ("IN_PROGRESS", "AWAITING_RELEASE"): {"worker"},
-    ("AWAITING_RELEASE", "COMPLETED"): {"worker", "human"},
     ("AWAITING_RELEASE", "READY"): {"human", "coordinator", "worker"},  # worker: élesítés után talált prod-hiba
     # emberi átvétel nélküli lezárás: csak ha a projekt nem kér review-t (worker.review_required: false)
     ("IN_PROGRESS", "COMPLETED"): {"worker"},
@@ -33,6 +32,11 @@ TRANSITIONS: dict[tuple[str, str], set[str]] = {
     ("COMPLETED", "READY"): {"human", "coordinator"},
     ("NEW", "COMPLETED"): {"coordinator"},
     ("READY", "COMPLETED"): {"coordinator"},
+    # állapot-egyeztetés (coordinator review): a forrásban már kész / lezárt munka
+    ("AWAITING_RELEASE", "COMPLETED"): {"worker", "human", "coordinator"},
+    ("BLOCKED", "COMPLETED"): {"coordinator"},
+    ("READY", "CANCELLED"): {"human", "coordinator"},
+    ("BLOCKED", "CANCELLED"): {"human", "coordinator"},
 }
 for _s in STATUSES:
     if _s not in FINAL:
