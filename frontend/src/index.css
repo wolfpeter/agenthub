@@ -20,6 +20,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-appl
 .btn.sm{padding:0 6px;font-size:11px}
 .inp{font:inherit;width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
 .inp:focus{outline:2px solid var(--acc);outline-offset:-1px}
+.txt{white-space:pre-wrap;word-break:break-word;font-size:13.5px;line-height:1.5;background:color-mix(in srgb,var(--line) 35%,transparent);border-radius:6px;padding:8px 10px;overflow:auto;max-height:40vh}
 .tag{font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 4px;white-space:nowrap}
 .box{border:1px solid var(--line);border-radius:8px;padding:4px 9px;min-width:0;font-size:12px;line-height:1.35}
 .box h3{margin:0 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:600}

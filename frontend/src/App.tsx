@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { get, post, setOn401, ago, hm, num, type State } from './api'
+import { FINAL, get, post, setOn401, ago, hm, num, type State } from './api'
 import { UIProvider, useRun, useUI, Skel } from './ui'
 import Board from './Board'
 import NewTicket from './NewTicket'
@@ -76,18 +76,23 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       <header className="flex flex-wrap gap-2 items-stretch px-4 py-1.5 border-b border-line bg-card md:sticky top-0 z-10">
         {S ? <HeaderBoxes S={S} reload={load} /> : <div className="flex gap-2 flex-1"><div className="w-40"><Skel h={46} /></div><div className="w-40"><Skel h={46} /></div></div>}
         <div className="flex items-center gap-2 ml-auto">
-          {S && S.projects.length > 1 && (
-            <select className="inp !w-auto" value={proj} onChange={e => setProj(e.target.value)} aria-label="Projekt">
-              <option value="">Minden projekt</option>
-              {S.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          )}
           <button className="btn pri" onClick={() => setCreating(true)}>+ Új feladat</button>
           <span className="text-[12px] text-mut whitespace-nowrap" title={live ? 'Élő kapcsolat' : 'Újracsatlakozás…'}>
             <span className={'dot ' + (live ? 'on' : 'off')} />{live ? 'élő' : 'újracsatlakozás…'}
           </span>
           <button className="btn" onClick={logout}>Kilépés</button>
         </div>
+        {S && S.projects.length > 1 && (
+          <nav className="basis-full flex flex-wrap gap-1 pt-1.5 mt-0.5 border-t border-line" aria-label="Projektek">
+            {[{ id: '', name: 'Minden projekt' }, ...S.projects].map(p => {
+              // várakozó: még nem lezárt ticket (a projekt nélküliek a „Minden projekt” alatt)
+              const n = S.tickets.filter(t => !FINAL.includes(t.status) && (!p.id || t.project_id === p.id)).length
+              return (
+                <button key={p.id} className={'btn !py-0.5 ' + (proj === p.id ? 'pri' : '')} aria-pressed={proj === p.id} onClick={() => setProj(p.id)}>
+                  {p.name} <span className={proj === p.id ? '' : 'text-mut'}>({n})</span></button>)
+            })}
+          </nav>
+        )}
       </header>
       <nav className="flex flex-wrap gap-1 px-4 pt-2" aria-label="Nézetek">
         {VIEWS.map(([k, t]) => (
