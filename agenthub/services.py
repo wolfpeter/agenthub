@@ -149,6 +149,35 @@ def _check_project_paths(s, cfg: ProjectConfig):
             raise Invalid(f"a working_directory átfed a(z) {p.id} projektével: {p.working_directory}")
 
 
+def set_project_active(s, who: Principal, pid: str, value: bool) -> Project:
+    """Projekt felvétele a munkába / elengedése (új konfigverzióként): inaktívra nem indul Worker, nem sorol be oda senki."""
+    p = s.get(Project, pid)
+    if not p:
+        raise NotFound("nincs ilyen projekt")
+    if p.is_active != value:
+        cfg = project_config(p).model_dump(mode="json")
+        cfg["is_active"] = value
+        save_config(s, who, "project", cfg, "projekt " + ("aktiválva" if value else "inaktiválva"))
+    return p
+
+
+def delete_project(s, who: Principal, pid: str):
+    """Végleges törlés csak nyom nélküli projektnél; ami már dolgozott, azt inaktiválni kell (az előzmény megmarad)."""
+    if who.role != "dashboard":
+        raise Forbidden("projektet csak a Dashboardról lehet törölni")
+    p = s.get(Project, pid)
+    if not p:
+        raise NotFound("nincs ilyen projekt")
+    for model, what in ((Ticket, "ticketje"), (PendingAction, "művelete"), (AgentRun, "futása")):
+        if s.scalar(select(func.count()).select_from(model).where(model.project_id == pid)):
+            raise Invalid(f"a(z) {pid} projektnek már van {what}: törlés helyett inaktiváld")
+    s.execute(Control.__table__.delete().where(Control.name == f"worker:{pid}"))
+    audit(s, who, "project.delete", "project", pid, {"working_directory": p.working_directory})
+    s.delete(p)
+    s.flush()
+    changed(what="projects")
+
+
 def config_history(s, scope: str, scope_id: str = "") -> list[ConfigVersion]:
     return list(s.scalars(select(ConfigVersion).where(ConfigVersion.scope == scope, ConfigVersion.scope_id == scope_id)
                           .order_by(ConfigVersion.version.desc())))
@@ -382,8 +411,9 @@ def human_transition(s, who: Principal, t: Ticket, action: str, note: str | None
         _move(s, t, "READY", who, "retry", payload)
     elif action in ("triage", "ready"):
         if project_id:
-            if not s.get(Project, project_id):
-                raise Invalid(f"ismeretlen projekt: {project_id}")
+            pr = s.get(Project, project_id)
+            if not pr or not pr.is_active:
+                raise Invalid(f"ismeretlen vagy inaktív projekt: {project_id}")
             t.project_id = project_id
         if not t.project_id:
             raise Invalid("projekt megadása kötelező")
@@ -414,8 +444,9 @@ def classify(s, who: Principal, t: Ticket, project_id: str | None, ttype: str | 
     if triage or not project_id:
         _move(s, t, "NEEDS_TRIAGE", who, "classified", {"reason": reason})
         return
-    if not s.get(Project, project_id):
-        raise Invalid(f"ismeretlen projekt: {project_id}")
+    pr = s.get(Project, project_id)
+    if not pr or not pr.is_active:
+        raise Invalid(f"ismeretlen vagy inaktív projekt: {project_id}")
     check_type(s, project_id, t.type)
     t.project_id = project_id
     _move(s, t, "READY", who, "classified", {"project": project_id, "reason": reason})

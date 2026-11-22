@@ -268,6 +268,7 @@ def state(p: Principal = Dash):
             d["over_budget"] = bool(budget is not None and (month_cost.get(pr.id) or 0) >= budget)
             d["worker_control"] = sv.control_state(s, f"worker:{pr.id}")
             d["inventory_count"] = len((pr.inventory or {}).get("files", []))
+            d["ticket_count"] = s.scalar(select(func.count()).select_from(Ticket).where(Ticket.project_id == pr.id))
             projects.append(d)
         tickets = s.scalars(select(Ticket).where((Ticket.status.notin_(states.FINAL)) | (Ticket.updated_at >= since))
                             .order_by(Ticket.priority, Ticket.id))
@@ -353,6 +354,59 @@ def projects(p: Principal = Any):
         if p.role == "worker":
             q = q.where(Project.id == p.project_id)
         return [ser.row(x) for x in s.scalars(q)]
+
+
+class ProjectActiveIn(BaseModel):
+    value: bool
+
+
+@app.post("/api/projects/{pid}/active")
+def project_active(pid: str, body: ProjectActiveIn, p: Principal = Dash):
+    with db.session() as s:
+        x = sv.set_project_active(s, p, pid, body.value)
+        return ser.row(x)
+
+
+@app.delete("/api/projects/{pid}")
+def project_delete(pid: str, p: Principal = Dash):
+    with db.session() as s:
+        sv.delete_project(s, p, pid)
+    return {"deleted": pid}
+
+
+# A Dashboard mappaválasztója: a hoston beállított gyökér (AGENTHUB_PROJECTS_ROOT) csak olvasható csatolásként,
+# a konténerben /projects-root alatt; csak könyvtárneveket ad ki, tartalmat nem.
+FS_MOUNT = "/projects-root"
+
+
+@app.get("/api/fs/dirs")
+def fs_dirs(path: str | None = None, p: Principal = Dash):
+    host = (os.environ.get("AGENTHUB_PROJECTS_ROOT_HOST") or "").rstrip("/")
+    if not host or not os.path.isdir(FS_MOUNT):
+        return {"root": None, "error": "Nincs beállítva a projektek gyökérmappája: a telepítés .env fájljában "
+                                       "AGENTHUB_PROJECTS_ROOT=<mappa>, majd agenthub up."}
+    path = (path or host).rstrip("/") or host
+    if path != host and not path.startswith(host + "/"):
+        raise HTTPException(400, "a mappa a projektek gyökérmappáján kívül van")
+    base = os.path.realpath(FS_MOUNT)
+    inner = os.path.realpath(os.path.join(FS_MOUNT, os.path.relpath(path, host)))
+    if inner != base and not inner.startswith(base + "/"):
+        raise HTTPException(400, "a mappa a projektek gyökérmappáján kívül van")
+    if not os.path.isdir(inner):
+        raise HTTPException(404, "nincs ilyen mappa")
+    with db.session() as s:
+        used = {x.working_directory.rstrip("/"): x.id for x in s.scalars(select(Project))}
+    dirs = []
+    for e in sorted(os.scandir(inner), key=lambda e: e.name.lower()):
+        if e.name.startswith(".") or not e.is_dir():
+            continue
+        real = os.path.realpath(e.path)
+        if not real.startswith(base + "/"):
+            continue  # kifelé mutató link
+        hp = f"{path}/{e.name}"
+        dirs.append({"name": e.name, "path": hp, "git": os.path.isdir(os.path.join(e.path, ".git")), "project": used.get(hp)})
+    return {"root": host, "path": path, "parent": None if path == host else path.rsplit("/", 1)[0], "dirs": dirs,
+            "project": used.get(path)}
 
 
 @app.get("/api/projects/{pid}")

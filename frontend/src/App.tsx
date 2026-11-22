@@ -8,6 +8,7 @@ import Approval from './Approval'
 import Knowledge from './Knowledge'
 import Agents from './Agents'
 import Config from './Config'
+import { AddProject } from './Projects'
 
 const VIEWS = [['board', 'Tábla'], ['approval', 'Jóváhagyás'], ['knowledge', 'Tudás'], ['agents', 'Ágensek'], ['config', 'Konfiguráció']] as const
 type View = typeof VIEWS[number][0]
@@ -52,6 +53,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   const [proj, setProj] = useState('')
   const [openId, setOpenId] = useState<number | null>(null)
   const [creating, setCreating] = useState(false)
+  const [addingProject, setAddingProject] = useState(false)
 
   const load = useCallback(() => get<State>('/api/state').then(setS).catch(() => {}), [])
   useEffect(() => { load() }, [load])
@@ -70,6 +72,8 @@ function Shell({ onLogout }: { onLogout: () => void }) {
 
   const logout = async () => { await post('/api/logout').catch(() => {}); onLogout() }
   const pending = S?.actions.filter(a => a.status === 'PENDING_APPROVAL').length ?? 0
+  const active = S?.projects.filter(p => p.is_active) ?? []  // az elengedett projekt nem jelenik meg a fejlécben
+  useEffect(() => { if (proj && S && !S.projects.some(p => p.id === proj && p.is_active)) setProj('') }, [S, proj])
   const wst = (id: string) => S?.projects.find(p => p.id === id)?.worker_control === 'stop' ? 'leállítva'
     : S?.agents.some(a => a.role === 'worker' && a.project_id === id && a.alive) ? 'fut' : 'nem fut'
 
@@ -86,9 +90,9 @@ function Shell({ onLogout }: { onLogout: () => void }) {
     <>
       <header className="flex flex-wrap gap-2 items-stretch px-4 py-1.5 border-b border-line bg-card md:sticky top-0 z-10">
         {S ? <HeaderBoxes S={S} reload={load} proj={proj} /> : <div className="flex gap-2 flex-1"><div className="w-40"><Skel h={46} /></div><div className="w-40"><Skel h={46} /></div></div>}
-        {S && S.projects.length > 1 && (
+        {S && active.length > 1 && (
           <nav className="basis-full flex flex-wrap items-center gap-1 pt-1.5 mt-0.5 border-t border-line" aria-label="Projektek">
-            {[{ id: '', name: 'Minden projekt' }, ...S.projects].map(p => {
+            {[{ id: '', name: 'Minden projekt' }, ...active].map(p => {
               // várakozó: még nem lezárt ticket (a projekt nélküliek a „Minden projekt” alatt)
               const n = S.tickets.filter(t => !FINAL.includes(t.status) && (!p.id || t.project_id === p.id)).length
               return (
@@ -97,10 +101,11 @@ function Shell({ onLogout }: { onLogout: () => void }) {
                   {p.id && <span className="dot" style={{ background: wst(p.id) === 'fut' ? 'var(--ok)' : wst(p.id) === 'leállítva' ? 'var(--bad)' : 'var(--p3)' }} />}
                   {p.name} <span className={proj === p.id ? '' : 'text-mut'}>({n})</span></button>)
             })}
+            <button className="btn !py-0.5" title="Új projekt felvétele" onClick={() => setAddingProject(true)}>+ Projekt</button>
             {actionsSlot}
           </nav>
         )}
-        {!(S && S.projects.length > 1) && actionsSlot}
+        {!(S && active.length > 1) && actionsSlot}
       </header>
       <nav className="flex flex-wrap gap-1 px-4 pt-2" aria-label="Nézetek">
         {VIEWS.map(([k, t]) => (
@@ -117,6 +122,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           {view === 'agents' && <Agents S={S} onOpen={setOpenId} />}
           {view === 'config' && <Config S={S} />}
           {openId !== null && <TicketDialog id={openId} S={S} onClose={() => setOpenId(null)} />}
+          {addingProject && <AddProject onClose={() => setAddingProject(false)} onDone={id => { load(); setProj(id) }} />}
           {creating && <NewTicket S={S} proj={proj} onClose={() => setCreating(false)} onCreated={id => { setCreating(false); setOpenId(id) }} />}
         </>
       )}
@@ -125,7 +131,8 @@ function Shell({ onLogout }: { onLogout: () => void }) {
 }
 
 // sok projektnél is alacsony marad: összesítő, a részletek a kiválasztott projektnél (a projektfülön)
-function WorkersBox({ S, proj, toggle, St }: { S: State; proj: string; toggle: (n: string, l: string, s: string) => void; St: any }) {
+function WorkersBox({ S: S0, proj, toggle, St }: { S: State; proj: string; toggle: (n: string, l: string, s: string) => void; St: any }) {
+  const S = { ...S0, projects: S0.projects.filter(p => p.is_active) }
   const alive = (id: string) => S.agents.find(a => a.role === 'worker' && a.project_id === id && a.alive)
   const run = S.projects.filter(p => alive(p.id)).length, stop = S.projects.filter(p => !alive(p.id) && p.worker_control === 'stop').length
   const rows = proj ? S.projects.filter(p => p.id === proj) : S.projects.length <= 1 ? S.projects : S.projects.filter(p => alive(p.id) || p.over_budget)

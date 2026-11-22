@@ -143,6 +143,14 @@ def project_for_cwd(explicit: str | None = None) -> str:
         wd = os.path.realpath(meta["working_directory"])
         if (cwd == wd or cwd.startswith(wd + "/")) and (best is None or len(wd) > len(best[1])):
             best = (meta["id"], wd)
+    if not best and not os.environ.get("AGENTHUB_ROLE"):  # a hoston: a Dashboardon felvett projekt még nincs a secrets-ben
+        try:
+            for p in admin().get("/api/projects"):
+                wd = os.path.realpath(p["working_directory"])
+                if (cwd == wd or cwd.startswith(wd + "/")) and (best is None or len(wd) > len(best[1])):
+                    best = (p["id"], wd)
+        except SystemExit:
+            pass
     if not best:
         die("ez a könyvtár egyik regisztrált projekthez sem tartozik (agenthub project add / project key)")
     return best[0]
@@ -303,6 +311,10 @@ def cmd_project(a):
         _write_project_key(a.id, key, wd)
         out({"project": a.id, "working_directory": wd})
         return
+    if a.action in ("enable", "disable"):
+        r = api.post(f"/api/projects/{a.id}/active", {"value": a.action == "enable"})
+        out({"project": a.id, "is_active": r["is_active"]})
+        return
     if a.action == "key":
         p = api.get(f"/api/projects/{a.id}")
         key = api.post(f"/api/projects/{a.id}/key")["key"]
@@ -361,6 +373,10 @@ def cmd_worker(a):
         p = next((x for x in projects if x["id"] == pid), None)
         if not p:
             die(f"nincs ilyen projekt: {pid}")
+        if not p["is_active"]:
+            die(f"a(z) {pid} projekt inaktív (agenthub project enable {pid})")
+        if not (secrets() / "projects" / f"{pid}.key").is_file():  # a Dashboardon felvett projektnek még nincs kulcsa
+            _write_project_key(pid, api.post(f"/api/projects/{pid}/key")["key"], p["working_directory"])
         sf = home() / "data" / "projects" / pid / "claude-settings.json"
         sf.parent.mkdir(parents=True, exist_ok=True)
         gc = api.get("/api/config/global")["current"]
@@ -1006,6 +1022,9 @@ def main(argv=None):
     r.add_argument("--branch", default="main")
     r = xs.add_parser("key", help="új Worker-kulcs a projekthez, a secrets-könyvtárba")
     r.add_argument("id")
+    for name, hlp in (("enable", "a projekt munkába vétele"), ("disable", "a projekt elengedése: nem indul rá Worker, nem sorol be oda senki")):
+        r = xs.add_parser(name, help=hlp)
+        r.add_argument("id")
     x.set_defaults(fn=cmd_project)
 
     x = sub.add_parser("worker", help="Worker-eszközök")

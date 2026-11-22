@@ -43,7 +43,7 @@ export interface Action {
 export interface Knowledge { id: number; project_id: string; category: string; title: string; content: string; status: string; created_at: string; source_ticket_id: number | null; created_by?: string }
 export interface Agent { id: string; project_id: string | null; role: string; status: string; last_heartbeat: string; session_id: string | null; model: string | null; active_ticket_id: number | null; started_at: string; alive: boolean
   stats: { runs: number; tokens_in: number | null; tokens_out: number | null; cost_usd: number | null; run_seconds: number | null } }
-export interface Project { id: string; name: string; is_active: boolean; worker_control: string; month_cost_usd: number | null; monthly_budget_usd: number | null; over_budget: boolean }
+export interface Project { id: string; name: string; is_active: boolean; working_directory: string; ticket_count: number; worker_control: string; month_cost_usd: number | null; monthly_budget_usd: number | null; over_budget: boolean }
 export interface Source { id: string; name: string; adapter_type: string; is_active: boolean; last_poll_at: string | null; last_error: string | null }
 export interface Ev { id: number; ticket_id: number; event_type: string; old_status: string | null; new_status: string | null; actor_type: string; actor_id: string | null; payload: any; created_at: string; title?: string; project_id?: string | null }
 export interface State {

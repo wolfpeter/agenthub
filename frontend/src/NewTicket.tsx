@@ -24,7 +24,7 @@ export default function NewTicket({ S, proj, onClose, onCreated }: { S: State; p
         <div className="grid grid-cols-3 gap-2">
           <div><label className="lbl" htmlFor="nt-proj">Projekt</label>
             <select id="nt-proj" className="inp" value={f.project_id} onChange={e => set('project_id', e.target.value)}>
-              <option value="">— besorolásra vár —</option>{S.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+              <option value="">— besorolásra vár —</option>{S.projects.filter(p => p.is_active).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
           <div><label className="lbl" htmlFor="nt-type">Típus</label>
             <select id="nt-type" className="inp" value={f.type} onChange={e => set('type', e.target.value)}>{TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
           <div><label className="lbl" htmlFor="nt-prio">Prioritás</label>

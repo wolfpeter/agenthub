@@ -38,9 +38,12 @@ services:
       AGENTHUB_SECRETS_DIR: /secrets
       AGENTHUB_DATA_DIR: /data
       AGENTHUB_ALLOW_PUBLIC: ${AGENTHUB_ALLOW_PUBLIC:-0}
+      AGENTHUB_PROJECTS_ROOT_HOST: ${AGENTHUB_PROJECTS_ROOT:-}
     volumes:
       - ./secrets:/secrets:ro
       - ./data:/data
+      # a Dashboard mappaválasztója: csak olvasható, csak könyvtárneveket listáz (üres = kikapcsolva)
+      - ${AGENTHUB_PROJECTS_ROOT:-./data}:/projects-root:ro
     ports:
       - "${AGENTHUB_BIND:-0.0.0.0}:${AGENTHUB_PORT:-8790}:8000"
 

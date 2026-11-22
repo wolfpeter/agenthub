@@ -412,3 +412,21 @@ def test_run_starts_claude_with_settings_and_skill(env, capsys, monkeypatch):
     monkeypatch.setenv("AGENTHUB_ROLE", "worker")  # agent sessionből nem indítható
     with pytest.raises(SystemExit):
         cli.main(["worker", "run", "--project", "demo"])
+
+
+def test_project_disable_and_dashboard_project_gets_key_on_run(env, capsys, monkeypatch, tmp_path):
+    home, proj = env
+    admin = cli.admin()
+    other = tmp_path / "dashproj"
+    other.mkdir()
+    admin.post("/api/config/project", {"data": {"id": "dash", "name": "Dash", "working_directory": str(other)}})
+    assert not (home / "secrets/projects/dash.key").exists()  # a Dashboard nem ír a secrets-be
+    monkeypatch.setattr(cli.os, "execvpe", lambda *a: None)
+    monkeypatch.chdir(other)
+    assert cli.project_for_cwd() == "dash"  # a hoston az API-ból is megtalálja
+    cli.main(["worker", "run", "--project", "dash"])
+    assert (home / "secrets/projects/dash.key").is_file() and (home / "secrets/projects/dash.json").is_file()
+    assert run(capsys, "project", "disable", "dash")["is_active"] is False
+    with pytest.raises(SystemExit):
+        cli.main(["worker", "run", "--project", "dash"])
+    assert run(capsys, "project", "enable", "dash")["is_active"] is True

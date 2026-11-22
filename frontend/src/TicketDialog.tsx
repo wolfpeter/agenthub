@@ -77,7 +77,7 @@ export default function TicketDialog({ id, S, onClose }: { id: number; S: State;
             <span className="flex-1" />
             {(st === 'NEEDS_TRIAGE' || st === 'NEW') && <>
               <select className="inp !w-auto" aria-label="Projekt" value={triageProj || d.project_id || ''} onChange={e => setTriageProj(e.target.value)}>
-                <option value="">— projekt —</option>{S.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+                <option value="">— projekt —</option>{S.projects.filter(p => p.is_active).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
               <button className="btn ok" disabled={!(triageProj || d.project_id)} onClick={() => tr('triage', 'Besorolva', { project_id: triageProj || d.project_id })}>Besorol (Indítható)</button></>}
             {(st === 'REVIEW' || st === 'AWAITING_RELEASE') && <>
               <button className="btn ok" onClick={() => tr('accept', 'Elfogadva')}>Elfogad</button>

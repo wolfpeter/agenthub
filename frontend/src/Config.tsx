@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import YAML from 'yaml'
 import { api, get, hm, post, type State } from './api'
 import { Dialog, Diff, useRun, useUI } from './ui'
+import { ProjectsAdmin } from './Projects'
 
 type Scope = 'global' | 'writers' | 'project' | 'source'
 const TABS: [Scope, string][] = [['global', 'Globális'], ['writers', 'Író adapterek'], ['project', 'Projektek'], ['source', 'Források']]
@@ -74,6 +75,8 @@ export default function Config({ S }: { S: State }) {
           <label className="btn cursor-pointer">Import<input type="file" accept=".yaml,.yml,.json" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importFile(f) }} /></label>
         </span>
       </div>
+      {scope === 'project' && <ProjectsAdmin S={S} onChanged={load} />}
+      {scope === 'project' && <h3 className="text-[12px] uppercase tracking-wide text-mut font-semibold m-0 mb-1.5">Részletes beállítás (YAML)</h3>}
       {multi && (
         <div className="flex gap-1 flex-wrap mb-2">
           {ids.map(i => <button key={i} className={'btn sm ' + (sel === i ? 'pri' : '')} onClick={() => setSel(i)}>{i}</button>)}

@@ -692,3 +692,33 @@ def test_reply_to_dismissed_thread_opens_new_item(dash, coord):
     coord.post(f"/api/tickets/{first}/coordinator", {"action": "dismiss", "reason": "automata"})
     r = coord.post("/api/sources/mail/events", {"items": [{"external_id": "m2", "thread_id": "T", "title": "Re: kérdésem van"}]})
     assert len(r["created"]) == 1 and r["created"][0] != first
+
+
+def test_project_disable_delete_and_folder_picker(dash, client, tmp_path, monkeypatch):
+    from agenthub.api import app as appmod
+    make_project(dash, "alpha")
+    make_project(dash, "fresh")
+    t = new(dash, project_id="alpha")
+    # elengedés: nem sorolható be oda, a fejléc a state-ből látja
+    assert dash.post("/api/projects/alpha/active", {"value": False})["is_active"] is False
+    dash.post(f"/api/tickets/{t['id']}/transition", {"action": "triage", "project_id": "alpha"}, ok=400)
+    st = {p["id"]: p for p in dash.get("/api/state")["projects"]}
+    assert st["alpha"]["is_active"] is False and st["alpha"]["ticket_count"] == 1 and st["fresh"]["ticket_count"] == 0
+    assert dash.post("/api/projects/alpha/active", {"value": True})["is_active"] is True
+    # törlés csak nyom nélkül
+    assert client.delete("/api/projects/alpha", headers=dash.h).status_code == 400
+    assert client.delete("/api/projects/fresh", headers=dash.h).status_code == 200
+    assert all(p["id"] != "fresh" for p in dash.get("/api/projects"))
+    # mappaválasztó: csak a gyökér alatt, link kifelé nem
+    root = tmp_path / "root"
+    (root / "repo" / ".git").mkdir(parents=True)
+    (root / "plain").mkdir()
+    (root / "out").symlink_to(tmp_path)
+    monkeypatch.setattr(appmod, "FS_MOUNT", str(root))
+    assert dash.get("/api/fs/dirs")["root"] is None  # nincs beállítva
+    monkeypatch.setenv("AGENTHUB_PROJECTS_ROOT_HOST", "/home/u/Projektek")
+    r = dash.get("/api/fs/dirs")
+    assert [(d["name"], d["git"]) for d in r["dirs"]] == [("plain", False), ("repo", True)] and r["parent"] is None
+    assert dash.get("/api/fs/dirs?path=/home/u/Projektek/repo")["parent"] == "/home/u/Projektek"
+    assert client.get("/api/fs/dirs?path=/home/u/Projektek/../..", headers=dash.h).status_code == 400
+    assert client.get("/api/fs/dirs?path=/etc", headers=dash.h).status_code == 400
