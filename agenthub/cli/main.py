@@ -233,8 +233,8 @@ def cmd_welcome(a):
         print("  (LAN-ról, Tailscale-ről és erről a gépről érhető el; nyilvános internetes címről nem.)")
     print(f"\nDashboard-kulcs (első belépéshez; később: agenthub key show):\n  {read_key('dashboard.key')}\n")
     print("Következő lépések:\n  agenthub project add --id <azonosító> --name <név> --dir <projekt könyvtára>")
-    print("  Coordinator:  agenthub coordinator command   (kiírja az indítóparancsot)")
-    print("  Worker:       agenthub worker command --project <azonosító>  (kiírja az indítóparancsot)\n")
+    print("  Coordinator:  agenthub coordinator run   (vagy: command, ha csak kiírná az indítóparancsot)")
+    print("  Worker:       agenthub worker run --project <azonosító>\n")
 
 
 def compose_cmd() -> list[str]:
@@ -314,6 +314,7 @@ def cmd_project(a):
 
 AGENT_COMMANDS = {"worker": ("worker", "ticket", "memory", "release"), "coordinator": ("coordinator",)}
 ADMIN_COMMANDS = ("init", "welcome", "up", "doctor", "key", "project", "worker command", "coordinator command",
+                  "worker run", "coordinator run",
                   "source", "config", "skills", "backup", "restore", "update")
 
 
@@ -346,8 +347,14 @@ def claude_settings(project: dict, all_projects: list[dict], gc: dict | None = N
     return out
 
 
+def _exec(cwd: str, sid: str, args: list[str], prompt: str):
+    """Az ágens Claude-sessionje ebben a terminálban, a skill elindításával (a CLI folyamatát lecseréli)."""
+    os.chdir(cwd)
+    os.execvpe("claude", ["claude", *args, prompt], {**os.environ, "AGENTHUB_SESSION_ID": sid})
+
+
 def cmd_worker(a):
-    if a.action == "command":
+    if a.action in ("command", "run"):
         pid = project_for_cwd(a.project)
         api = admin()
         projects = api.get("/api/projects")
@@ -368,6 +375,9 @@ def cmd_worker(a):
             print("# ...majd a sessionben: /worker")
             print("# Ha a session nem folytatható, új session:")
         new = str(uuid.uuid4())
+        if a.action == "run":
+            sid, flag = (sess, "--resume") if sess and not a.new else (new, "--session-id")
+            _exec(p["working_directory"], sid, [flag, sid, "--model", model, "--settings", str(sf)], "/worker")
         print(f"cd {p['working_directory']} && AGENTHUB_SESSION_ID={new} claude --session-id {new} --model {model} --settings {sf}")
         print("# ...majd a sessionben: /worker")
         return
@@ -655,7 +665,7 @@ def _due(src: dict, now: float) -> bool:
 
 
 def cmd_coordinator(a):
-    if a.action == "command":
+    if a.action in ("command", "run"):
         allow, deny = _agent_rules("coordinator")
         gc = admin().get("/api/config/global")["current"]
         gate = bool(gc.get("outbound_approval"))
@@ -668,6 +678,8 @@ def cmd_coordinator(a):
         sf.write_text(json.dumps({"permissions": perms, "env": {"AGENTHUB_ROLE": "coordinator",
                                                                  "AGENTHUB_OUTBOUND_APPROVAL": "1" if gate else "0"}}, indent=2))
         sid = str(uuid.uuid4())
+        if a.action == "run":
+            _exec(str(home()), sid, ["--session-id", sid, "--model", gc["coordinator_model"], "--settings", str(sf)], "/coordinator")
         print(f"cd {home()} && AGENTHUB_SESSION_ID={sid} claude --session-id {sid} --model {gc['coordinator_model']} --settings {sf}")
         print("# ...majd a sessionben: /coordinator")
         return
@@ -1000,6 +1012,9 @@ def main(argv=None):
     xs = x.add_subparsers(dest="action", required=True)
     r = xs.add_parser("command", help="a Worker Claude-sessionjének indítóparancsa")
     r.add_argument("--project")
+    r = xs.add_parser("run", help="a Worker indítása ebben a terminálban (Claude-session + /worker)")
+    r.add_argument("--project")
+    r.add_argument("--new", action="store_true", help="félbehagyott ticket esetén is új session (nem --resume)")
     r = xs.add_parser("start")
     r.add_argument("--project")
     r.add_argument("--takeover", action="store_true")
@@ -1079,6 +1094,7 @@ def main(argv=None):
     x = sub.add_parser("coordinator", help="Coordinator-eszközök")
     xs = x.add_subparsers(dest="action", required=True)
     xs.add_parser("command", help="a Coordinator Claude-sessionjének indítóparancsa")
+    xs.add_parser("run", help="a Coordinator indítása ebben a terminálban (Claude-session + /coordinator)")
     r = xs.add_parser("start")
     r.add_argument("--takeover", action="store_true")
     r = xs.add_parser("wait")

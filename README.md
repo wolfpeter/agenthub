@@ -35,11 +35,11 @@ Ha a telepítés már megvan, ugyanez a parancs frissít: mentést készít, leh
 
 ```bash
 agenthub project add --id webshop --name "Webshop" --dir ~/Projects/webshop
-agenthub coordinator command          # kiírja a Coordinator indítóparancsát
-agenthub worker command --project webshop   # kiírja a Worker indítóparancsát (vagy a folytatást)
+agenthub coordinator run              # elindítja a Coordinatort ebben a terminálban
+agenthub worker run --project webshop # elindítja a Workert (félbehagyott ticketnél a sessiont folytatja; --new: új session)
 ```
 
-Az agenteket mindig kézzel kell elindítani, látható terminálban. Futtasd a kiírt `claude …` parancsot, majd a sessionben írd be: `/coordinator` vagy `/worker`. A várakozás nem fogyaszt tokent: az `agenthub … wait` parancs vár, a modell csak valódi munkánál fut.
+Az agenteket mindig kézzel kell elindítani, látható terminálban. A `run` a helyes beállításokkal (jogosultságok, modell, session-azonosító) indítja a `claude`-ot, és rögtön elindítja a `/coordinator`, illetve `/worker` skillt. A `command` ugyanezt csak kiírja, ha magad indítanád. A várakozás nem fogyaszt tokent: az `agenthub … wait` parancs vár, a modell csak valódi munkánál fut.
 
 A Dashboardon:
 - Felveszed a ticketet, és bepipálod a **Mehet**-et. A Worker csak ezután veszi fel.

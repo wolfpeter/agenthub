@@ -394,3 +394,21 @@ def test_outbound_approval(env, capsys, monkeypatch):
     run(capsys, "worker", "start")
     w = run(capsys, "worker", "wait", "--timeout", "1")
     assert w["stop"] is True and "worker command" in w["reason"]
+
+
+def test_run_starts_claude_with_settings_and_skill(env, capsys, monkeypatch):
+    home, proj = env
+    run(capsys, "project", "add", "--id", "demo", "--dir", str(proj))
+    calls = []
+    monkeypatch.setattr(cli.os, "execvpe", lambda f, argv, e: calls.append((os.getcwd(), argv, e)))
+    monkeypatch.chdir(home.parent)
+    cli.main(["worker", "run", "--project", "demo"])
+    cwd, argv, e = calls[-1]
+    assert cwd == str(proj) and argv[0] == "claude" and argv[-1] == "/worker"
+    assert "--settings" in argv and "--model" in argv and argv[argv.index("--session-id") + 1] == e["AGENTHUB_SESSION_ID"]
+    cli.main(["coordinator", "run"])
+    cwd, argv, e = calls[-1]
+    assert cwd == str(home) and argv[-1] == "/coordinator" and "--settings" in argv
+    monkeypatch.setenv("AGENTHUB_ROLE", "worker")  # agent sessionből nem indítható
+    with pytest.raises(SystemExit):
+        cli.main(["worker", "run", "--project", "demo"])
