@@ -316,7 +316,8 @@ def state(p: Principal = Dash):
             "installation": inst.name if inst else gc.installation_name, "version": __version__, "now": ser.iso(now()),
             "projects": projects, "tickets": tlist, "questions": qs, "actions": actions, "knowledge": knowledge,
             "agents": agents, "sources": sources, "events": events,
-            "controls": {"coordinator": sv.control_state(s, "coordinator")},
+            "controls": {"coordinator": sv.control_state(s, "coordinator"),
+                         "coordinator_outbound_approval": gc.coordinator_outbound_approval},
             "usage_24h": {"runs": usage[0], "tokens_in": usage[1], "tokens_out": usage[2], "cost_usd": usage[3]},
             "coordinator_poll_interval_s": gc.coordinator_poll_interval_s,
             "last_cycle": sv.last_cycle(s),
@@ -880,6 +881,7 @@ def coordinator_context(request: Request, p: Principal = Coord):
         return {"control": sv.control_state(s, "coordinator"),
                 "poll_interval_s": gc.coordinator_poll_interval_s, "model": gc.coordinator_model,
                 "cli_executables": gc.cli_executables, "instructions": gc.coordinator_instructions or None,
+                "outbound_approval": gc.coordinator_outbound_approval,
                 "sources": [ser.row(x) for x in s.scalars(select(Source).where(Source.is_active.is_(True)))],
                 "projects": [{"id": x.id, "name": x.name} for x in s.scalars(select(Project).where(Project.is_active.is_(True)))]}
 
@@ -1029,6 +1031,21 @@ def control(body: ControlIn, p: Principal = Dash):
     with db.session() as s:
         sv.set_control(s, p, body.name, body.state)
     return {"ok": True}
+
+
+class FlagIn(BaseModel):
+    value: bool
+
+
+@app.post("/api/coordinator/outbound-approval")
+def outbound_approval(body: FlagIn, p: Principal = Dash):
+    """Dashboard-kapcsoló: a Coordinator kimenő írása csak jóváhagyással (új konfigverzióként mentve)."""
+    with db.session() as s:
+        g = sv.global_config(s).model_dump(mode="json")
+        if g["coordinator_outbound_approval"] != body.value:
+            g["coordinator_outbound_approval"] = body.value
+            sv.save_config(s, p, "global", g, "kimenő jóváhagyás " + ("be" if body.value else "ki"))
+    return {"value": body.value}
 
 
 # ---------------------------------------------------------------- statikus Dashboard

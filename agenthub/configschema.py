@@ -56,6 +56,10 @@ class GlobalConfig(Strict):
     coordinator_allowed_tools: list[str] = Field(default_factory=list)
     coordinator_denied_tools: list[str] = Field(default_factory=list)
     coordinator_permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "default"
+    # true: a Coordinator kifelé (komment, üzenet) csak jóváhagyott művelettel ír; a coordinator_outbound_tools
+    # a sessionben tiltott, helyettük `agenthub coordinator action` javaslat megy a Jóváhagyási központba
+    coordinator_outbound_approval: bool = False
+    coordinator_outbound_tools: list[str] = Field(default_factory=list)
     # Helyi kapu a Worker elé (pl. kvótafigyelés): a jelölt ticket JSON-ját stdin-en kapja; 0 = mehet,
     # más kilépési kód = most ne vegyen fel munkát (a stdout első sora az ok)
     worker_gate_command: list[str] = Field(default_factory=list)

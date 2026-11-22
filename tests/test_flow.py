@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from agenthub import states
@@ -143,7 +145,11 @@ def test_action_requires_human_approval(dash, two_projects):
     assert dash.get(f"/api/tickets/{t['id']}")["status"] == "PENDING_APPROVAL"  # az első még nyitott
     wa.post(f"/api/actions/{a['id']}/decide", {"decision": "approve"}, ok=403)
     dash.post(f"/api/actions/{a['id']}/decide", {"decision": "approve"})
-    # nincs Trello író adapter beállítva: APPROVED marad, kézi végrehajtásra vár
+    # nincs Trello író adapter beállítva: APPROVED marad, kézi végrehajtásra vár (a háttérszál után)
+    for _ in range(100):
+        if dash.get(f"/api/tickets/{t['id']}")["actions"][0]["status"] != "EXECUTING":
+            break
+        time.sleep(0.02)
     dash.post(f"/api/actions/{a['id']}/decide", {"decision": "manual", "note": "kézzel kitettem"})
     assert dash.get(f"/api/tickets/{t['id']}")["status"] == "READY"
     assert nxt(wa)["ticket"]["id"] == t["id"]

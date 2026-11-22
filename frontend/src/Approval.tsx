@@ -24,6 +24,9 @@ export function ActionCard({ a, onOpen }: { a: Action; onOpen?: (id: number) => 
       </div>
       {a.target_system === 'file' ? (
         <>{p.path && <div className="text-[12px] text-mut mt-1">Fájl: {p.path}</div>}<Diff text={a.diff || '(nincs eltérés)'} /></>
+      ) : typeof p.text === 'string' ? (
+        <>{Object.keys(p).length > 1 && <pre className="code">{JSON.stringify({ ...p, text: undefined }, null, 2)}</pre>}
+          <div className="card p-2 my-1 text-[13px]" style={{ whiteSpace: 'pre-wrap' }}>{p.text}</div></>
       ) : <pre className="code">{JSON.stringify(p, null, 2)}</pre>}
       {info && <div className="text-[12px] p-2 rounded-md my-1" style={{ background: 'color-mix(in srgb,var(--warn) 15%,transparent)' }}>{String(info)}</div>}
       {a.execution_result && !info && Object.values(a.execution_result).some(v => v != null) && <pre className="code">{JSON.stringify(a.execution_result, null, 2)}</pre>}

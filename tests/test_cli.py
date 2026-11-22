@@ -357,3 +357,33 @@ def test_coordinator_wait_reports_updates_once(env, capsys):
     assert run(capsys, "coordinator", "wait", "--timeout", "1")["idle"] is True  # egyszer adja ki
     tid = r["updates"][0]["ticket"]
     assert run(capsys, "coordinator", "set", str(tid), "--priority", "1")["priority"] == 1
+
+
+def test_coordinator_outbound_approval(env, capsys, monkeypatch):
+    home, proj = env
+    run(capsys, "project", "add", "--id", "demo", "--dir", str(proj))
+    admin = cli.admin()
+    g = admin.get("/api/config/global")["current"]
+    g["coordinator_outbound_tools"] = ["mcp__trello__comment"]
+    admin.post("/api/config/global", {"data": g})
+    run(capsys, "coordinator", "command")
+    st = json.loads((home / "data/coordinator-settings.json").read_text())
+    assert "mcp__trello__comment" not in st["permissions"]["deny"]  # kikapcsolva: közvetlen írás
+    assert admin.post("/api/coordinator/outbound-approval", {"value": True})["value"] is True  # Dashboard-kapcsoló
+    assert admin.get("/api/state")["controls"]["coordinator_outbound_approval"] is True
+    run(capsys, "coordinator", "command")
+    st = json.loads((home / "data/coordinator-settings.json").read_text())
+    assert "mcp__trello__comment" in st["permissions"]["deny"] and st["env"]["AGENTHUB_OUTBOUND_APPROVAL"] == "1"
+    monkeypatch.setenv("AGENTHUB_OUTBOUND_APPROVAL", "1")
+    assert run(capsys, "coordinator", "start")["outbound_approval"] is True
+    t = admin.post("/api/tickets", {"title": "Kérdés a kártyán", "project_id": "demo"})
+    r = run(capsys, "coordinator", "action", str(t["id"]), "--target", "trello", "--type", "comment", "--ref", "abc",
+            "--payload-json", '{"text": "Szia! Kint van."}')
+    assert r["status"] == "PENDING_APPROVAL"
+    d = admin.get(f"/api/tickets/{t['id']}")
+    assert any("Szia! Kint van." in (e["payload"] or {}).get("text", "") for e in d["events"] if e["event_type"] == "note")
+    a = admin.post(f"/api/actions/{r['action_id']}/decide", {"decision": "approve"})
+    assert a["status"] == "APPROVED"  # író adapter nélkül kézi végrehajtásra vár
+    admin.post("/api/coordinator/outbound-approval", {"value": False})  # váltás: a futó session leáll
+    w = run(capsys, "coordinator", "wait", "--timeout", "1")
+    assert w["stop"] is True and "újra" in w["reason"]

@@ -644,13 +644,16 @@ def cmd_coordinator(a):
     if a.action == "command":
         allow, deny = _agent_rules("coordinator")
         gc = admin().get("/api/config/global")["current"]
+        gate = bool(gc.get("coordinator_outbound_approval"))
         perms = {"allow": [*allow, *gc.get("coordinator_allowed_tools", [])],
-                 "deny": [*deny, *gc.get("coordinator_denied_tools", [])]}
+                 "deny": [*deny, *gc.get("coordinator_denied_tools", []),
+                          *(gc.get("coordinator_outbound_tools", []) if gate else [])]}
         if gc.get("coordinator_permission_mode", "default") != "default":
             perms["defaultMode"] = gc["coordinator_permission_mode"]
         sf = home() / "data" / "coordinator-settings.json"
         sf.parent.mkdir(parents=True, exist_ok=True)
-        sf.write_text(json.dumps({"permissions": perms, "env": {"AGENTHUB_ROLE": "coordinator"}}, indent=2))
+        sf.write_text(json.dumps({"permissions": perms, "env": {"AGENTHUB_ROLE": "coordinator",
+                                                                 "AGENTHUB_OUTBOUND_APPROVAL": "1" if gate else "0"}}, indent=2))
         sid = str(uuid.uuid4())
         print(f"cd {home()} && AGENTHUB_SESSION_ID={sid} claude --session-id {sid} --model {gc['coordinator_model']} --settings {sf}")
         print("# ...majd a sessionben: /coordinator")
@@ -670,7 +673,7 @@ def cmd_coordinator(a):
             save_state("coordinator", st)
         out({"instance": st["instance_id"], "control": ctx["control"], "model": ctx["model"],
              "sources": [x["id"] for x in ctx["sources"]], "projects": ctx["projects"],
-             "instructions": ctx.get("instructions")})
+             "instructions": ctx.get("instructions"), "outbound_approval": ctx.get("outbound_approval", False)})
         return
     api = coord_api()
     if a.action == "wait":
@@ -681,6 +684,12 @@ def cmd_coordinator(a):
             ctx = api.get("/api/coordinator/context")
             if ctx["control"] == "stop":
                 out({"stop": True})
+                return
+            started = os.environ.get("AGENTHUB_OUTBOUND_APPROVAL")
+            if started is not None and (started == "1") != bool(ctx.get("outbound_approval")):
+                # a tiltások a session indulásakor rögzülnek: váltás után csak újraindítva érvényes
+                out({"stop": True, "reason": "A kimenő jóváhagyás beállítása megváltozott: indítsd újra a Coordinatort "
+                                             "az `agenthub coordinator command` által kiírt paranccsal."})
                 return
             next_due = end
             cycle = {"sources_checked": 0, "created": 0, "updated": 0, "routed": 0, "errors": []}
@@ -733,6 +742,10 @@ def cmd_coordinator(a):
     elif a.action == "go":
         t = api.post(f"/api/tickets/{a.id}/go", {"value": True, "reason": a.reason})
         out({"id": t["id"], "go": t["start_approved"]})
+    elif a.action == "action":
+        r = api.post(f"/api/tickets/{a.id}/actions", {"target_system": a.target, "action_type": a.type,
+                                                      "target_reference": a.ref, "payload": json.loads(_text(a.payload_json))})
+        out({"action_id": r["id"], "status": r["status"]})
     elif a.action == "show":
         t = api.get(f"/api/tickets/{a.id}")
         t["events"] = [{k: e[k] for k in ("event_type", "new_status", "actor_type", "payload", "created_at")}
@@ -1077,6 +1090,12 @@ def main(argv=None):
     r.add_argument("--add", help="új információ a meglévő tickethez ('-' = stdin, '@fájl')")
     r = xs.add_parser("show", help="a ticket részletei és előzményei (megjegyzések, válaszok)")
     r.add_argument("id", type=int)
+    r = xs.add_parser("action", help="kimenő írás javaslata: a Dashboardon jóváhagyás után hajtódik végre")
+    r.add_argument("id", type=int)
+    r.add_argument("--target", required=True, choices=["trello", "jira", "email"])
+    r.add_argument("--type", required=True, help="pl. comment, move, update")
+    r.add_argument("--ref", help="a célobjektum azonosítója (pl. Trello-kártya)")
+    r.add_argument("--payload-json", required=True, help="pl. '{\"text\": \"...\"}' ('-' = stdin, '@fájl')")
     for name, hlp in (("reopen", "újranyitás új bemenetre (REVIEW/AWAITING_RELEASE/COMPLETED/BLOCKED/FAILED → READY)"),
                       ("set", "prioritás vagy cím módosítása"), ("done", "kész munka nélkül (pl. megválaszolt kérdés)"),
                       ("dismiss", "nem munka (pl. automata levél): NEW → CANCELLED"), ("note", "megjegyzés a tickethez")):

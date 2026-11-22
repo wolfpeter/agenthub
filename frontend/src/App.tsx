@@ -134,6 +134,14 @@ function HeaderBoxes({ S, reload }: { S: State; reload: () => void }) {
         <div className="flex gap-2 items-center"><St alive={!!coord} control={cs} />
           <span className="text-mut">{coord ? ago(coord.last_heartbeat) : ''}</span>
           <button className="btn" onClick={() => toggle('coordinator', 'a koordinátort', cs)}>{cs === 'stop' ? 'Engedélyez' : 'Leállít'}</button></div>
+        <label className="flex gap-2 items-center text-[12px] mt-1" title="Bekapcsolva a Coordinator kártyakommentet, üzenetet csak a Jóváhagyási központban jóváhagyva küldhet ki. Váltás után a futó Coordinator leáll, és újra kell indítani.">
+          <input type="checkbox" checked={S.controls.coordinator_outbound_approval} onChange={async e => {
+            const v = e.target.checked
+            if (!(await confirm(v ? 'A Coordinator ezután minden kimenő kommunikációt jóváhagyásra küld. A futó Coordinator leáll; indítsd újra.' : 'A Coordinator ezután jóváhagyás nélkül írhat ki. A futó Coordinator leáll; indítsd újra.'))) return
+            await run(() => post('/api/coordinator/outbound-approval', { value: v }), v ? 'Kimenő jóváhagyás bekapcsolva' : 'Kimenő jóváhagyás kikapcsolva')
+            reload()
+          }} />
+          {S.controls.coordinator_outbound_approval ? <b className="text-warn">Kimenő kommunikáció: csak jóváhagyással</b> : <span>Kimenő kommunikáció: közvetlen</span>}</label>
         {S.last_cycle && <div className="text-mut text-[12px]" title={S.last_cycle.errors.join('\n')}>
           utolsó kör {hm(S.last_cycle.at)}: {S.last_cycle.sources_checked} forrás, {S.last_cycle.created} új, {S.last_cycle.updated} frissült, {S.last_cycle.pending} döntésre vár
           {S.last_cycle.errors.length > 0 && <b className="text-bad"> · {S.last_cycle.errors.length} hiba</b>}</div>}</div>
