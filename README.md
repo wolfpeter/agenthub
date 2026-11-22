@@ -57,7 +57,7 @@ A Dashboardon:
 - `worker.review_required: false`: a Worker emberi átvétel nélkül is lezárhat.
 - `worker_gate_command`: helyi script, amely a Worker elé kapuként áll (pl. kvótafigyelés).
 - CLI-forrás: bármilyen JSON-t adó script (pl. piros pipeline, figyelő scriptek).
-- Élesítés: `finish --to release` → „Release-re vár”; a kiadás után `agenthub release list` és `agenthub release done`.
+- Élesítés: `finish --to release` → „Kész – kiadásra vár”; a kiadás után `agenthub release list` és `agenthub release done`.
 
 | Parancs | Mire |
 | --- | --- |

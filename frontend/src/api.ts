@@ -62,9 +62,9 @@ export const ago = (iso?: string | null) => {
 export const hm = (iso?: string | null) => iso ? new Date(iso).toLocaleString('hu-HU', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
 export const num = (n: number | null | undefined) => n == null ? '—' : n.toLocaleString('hu-HU')
 export const STATUS_HU: Record<string, string> = {
-  NEW: 'Új', NEEDS_TRIAGE: 'Besorolásra vár', READY: 'Indítható', IN_PROGRESS: 'Folyamatban', WAITING_FOR_INPUT: 'Válaszra vár',
-  PENDING_APPROVAL: 'Jóváhagyásra vár', REVIEW: 'Ellenőrzésre vár', AWAITING_RELEASE: 'Release-re vár', COMPLETED: 'Kész',
-  BLOCKED: 'Blokkolt (külső félre vár)', FAILED: 'Hiba', CANCELLED: 'Megszakítva',
+  NEW: 'Besorolásra vár', NEEDS_TRIAGE: 'Besorolásra vár', READY: 'Indítható', IN_PROGRESS: 'Folyamatban',
+  WAITING_FOR_INPUT: 'Blokkolt – rád vár (kérdés)', PENDING_APPROVAL: 'Blokkolt – rád vár (jóváhagyás)', REVIEW: 'Blokkolt – rád vár (ellenőrzés)',
+  BLOCKED: 'Blokkolt – külső félre vár', FAILED: 'Blokkolt – hiba', AWAITING_RELEASE: 'Kész – kiadásra vár', COMPLETED: 'Kész', CANCELLED: 'Megszakítva',
 }
 export const FINAL = ['COMPLETED', 'CANCELLED']
 

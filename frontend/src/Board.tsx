@@ -4,15 +4,15 @@ import { ACTOR_HU, EV_HU, STATUS_HU, TYPE_HU, ago, patch, post, hm, type State, 
 import { useRun } from './ui'
 
 const COLS: { key: string; title: string; st: string[]; fold?: boolean }[] = [
-  { key: 'inbox', title: 'Beérkező', st: ['NEW', 'NEEDS_TRIAGE'] },
+  { key: 'inbox', title: 'Besorolásra vár', st: ['NEW', 'NEEDS_TRIAGE'] },
   { key: 'ready', title: 'Indítható', st: ['READY'] },
+  // minden, ami áll: rád vár (kérdés, jóváhagyás, ellenőrzés), külső félre vár, hiba — a rád várók elöl
+  { key: 'blocked', title: 'Blokkolt', st: ['WAITING_FOR_INPUT', 'PENDING_APPROVAL', 'REVIEW', 'BLOCKED', 'FAILED'] },
   { key: 'wip', title: 'Folyamatban', st: ['IN_PROGRESS'] },
-  { key: 'wait', title: 'Rád vár', st: ['WAITING_FOR_INPUT', 'PENDING_APPROVAL'] },
-  { key: 'review', title: 'Ellenőrzésre vár', st: ['REVIEW'] },
-  { key: 'release', title: 'Release-re vár', st: ['AWAITING_RELEASE'] },
-  { key: 'blocked', title: 'Blokkolt / hiba', st: ['BLOCKED', 'FAILED'] },
+  { key: 'release', title: 'Kész – kiadásra vár', st: ['AWAITING_RELEASE'] },
   { key: 'done', title: 'Kész (24 óra)', st: ['COMPLETED', 'CANCELLED'], fold: true },
 ]
+const YOURS = ['WAITING_FOR_INPUT', 'PENDING_APPROVAL', 'REVIEW']
 const GO_STATES = ['READY', 'NEW', 'NEEDS_TRIAGE']
 const PCOL = ['', 'var(--p1)', 'var(--p2)', 'var(--p3)']
 
@@ -28,12 +28,12 @@ export default function Board({ S, proj, onOpen }: { S: State; proj: string; onO
   const events = S.events.filter(e => !proj || !e.project_id || e.project_id === proj)
   return (
     <LayoutGroup>
-      <main className="flex gap-3 px-4 py-3 items-start flex-wrap">
+      <main className="flex gap-3 px-4 py-3 items-start overflow-x-auto">
         {COLS.map(c => {
-          const ts = tickets.filter(t => c.st.includes(t.status))
+          const ts = tickets.filter(t => c.st.includes(t.status)).sort((a, b) => +YOURS.includes(b.status) - +YOURS.includes(a.status))
           return (
             <Column key={c.key} id={c.key} title={c.title} fold={c.fold}
-              count={ts.length} extra={c.key === 'ready' ? `${ts.filter(t => t.start_approved).length} bepipálva` : undefined}>
+              count={ts.length} extra={c.key === 'ready' ? `${ts.filter(t => t.start_approved).length} bepipálva` : c.key === 'blocked' && ts.some(t => YOURS.includes(t.status)) ? `${ts.filter(t => YOURS.includes(t.status)).length} rád vár` : undefined}>
               <AnimatePresence initial={false}>
                 {ts.map(t => <Card key={t.id} t={t} proj={showProj ? pname(t.project_id) : null} onOpen={onOpen} />)}
               </AnimatePresence>
@@ -63,11 +63,11 @@ function Column({ id, title, count, extra, fold, wide, children }: { id: string;
   const [open, toggle] = useFold(id)
   const closed = fold && !open
   return (
-    <motion.section layout="position" className={closed ? 'flex-none w-9' : wide ? 'flex-[0_1_340px] min-w-[240px]' : 'flex-1 min-w-[190px]'}>
+    <motion.section layout="position" className={closed ? 'flex-none w-9' : wide ? 'flex-[0_1_320px] min-w-[220px]' : 'flex-1 min-w-[175px]'}>
       <h2 className={'text-[13px] text-mut m-0 mb-2 flex justify-between gap-2 ' + (fold ? 'cursor-pointer select-none ' : '') + (closed ? 'card py-2.5 px-1.5 min-h-40 [writing-mode:vertical-rl] justify-start hover:border-acc' : '')}
         onClick={fold ? toggle : undefined} role={fold ? 'button' : undefined} aria-expanded={fold ? !closed : undefined} title={fold ? 'Kattintásra kinyílik / becsukódik' : undefined}>
         <span>{fold ? (closed ? '▸ ' : '▾ ') : ''}{title}</span>
-        <span className="flex gap-2">{extra && !closed && <span className="text-ok">{extra}</span>}
+        <span className="flex gap-2">{extra && !closed && <span className={id === 'blocked' ? 'text-warn font-semibold' : 'text-ok'}>{extra}</span>}
           <motion.span key={count} initial={{ scale: 1.5 }} animate={{ scale: 1 }}>{count}</motion.span></span>
       </h2>
       {!closed && children}
@@ -91,8 +91,9 @@ function Card({ t, proj, onOpen }: { t: Ticket; proj: string | null; onOpen: (id
         {t.status === 'BLOCKED' && <span className="tag" title={t.last_error ?? ''}>külső félre vár</span>}
         {t.status === 'FAILED' && <span className="tag text-bad" title={t.last_error ?? ''}>hiba</span>}
         {t.status === 'NEEDS_TRIAGE' && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>besorolás kell</span>}
-        {t.status === 'PENDING_APPROVAL' && <span className="tag">jóváhagyásra vár</span>}
-        {t.status === 'WAITING_FOR_INPUT' && <span className="tag">kérdés</span>}
+        {t.status === 'PENDING_APPROVAL' && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>rád vár: jóváhagyás</span>}
+        {t.status === 'WAITING_FOR_INPUT' && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>rád vár: kérdés</span>}
+        {t.status === 'REVIEW' && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }}>rád vár: ellenőrzés</span>}
         {t.status === 'CANCELLED' && <span className="tag">megszakítva</span>}
         {t.lease_stale && <span className="tag text-warn" style={{ borderColor: 'var(--warn)' }} title="A lease lejárt, a worker valószínűleg nem él">⚠ lejárt lease</span>}
         {t.source_url && <a href={t.source_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>forrás</a>}
