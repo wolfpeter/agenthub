@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 import time
 import uuid
 from datetime import timedelta
+from typing import Literal
 from pathlib import Path
 
 import yaml
@@ -224,6 +225,55 @@ def logout(response: Response):
 @app.get("/api/me")
 def me(p: Principal = Any):
     return {"role": p.role, "project_id": p.project_id, "name": os.environ.get("AGENTHUB_NAME") or None}
+
+
+def _data() -> Path:
+    return Path(os.environ.get("AGENTHUB_DATA_DIR", "/data"))
+
+
+def _helper_alive() -> bool:
+    try:
+        return time.time() - (_data() / "helper.alive").stat().st_mtime < 30
+    except OSError:
+        return False
+
+
+@app.get("/api/usage")
+def usage(p: Principal = Dash):
+    """A Claude-előfizetés kerete (a gépoldali segéd másolja át); lejárt ablak = 0 %."""
+    try:
+        u = json.loads((_data() / "usage.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    now = time.time()
+    pct = lambda k: 0 if (u.get(f"{k}_reset") or 0) < now else u.get(k)
+    return {"week": pct("week"), "week_reset": u.get("week_reset"), "five": pct("five"),
+            "five_reset": u.get("five_reset"), "at": u.get("at")}
+
+
+@app.get("/api/update")
+def update_status(p: Principal = Dash):
+    try:
+        st = json.loads((_data() / "update-status.json").read_text())
+    except (OSError, ValueError):
+        st = {}
+    return {**st, "helper": _helper_alive(), "pending": (_data() / "update-request.json").exists()}
+
+
+class UpdateIn(BaseModel):
+    action: Literal["check", "install"]
+
+
+@app.post("/api/update")
+def update_request(body: UpdateIn, p: Principal = Dash):
+    if not _helper_alive():
+        raise HTTPException(409, "a gépoldali segéd nem fut; a gépen: agenthub helper install")
+    if update_status(p).get("install", {}).get("state") == "running":
+        raise HTTPException(409, "a telepítés már fut")
+    (_data() / "update-request.json").write_text(json.dumps({"action": body.action}))
+    with db.session() as s:
+        sv.audit(s, p, f"update.{body.action}", "installation", None)
+    return {"ok": True}
 
 
 class RotateIn(BaseModel):

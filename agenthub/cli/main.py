@@ -327,7 +327,7 @@ def cmd_project(a):
 AGENT_COMMANDS = {"worker": ("worker", "ticket", "memory", "release"), "coordinator": ("coordinator",)}
 ADMIN_COMMANDS = ("init", "welcome", "up", "doctor", "key", "project", "worker command", "coordinator command",
                   "worker run", "coordinator run",
-                  "source", "config", "skills", "backup", "restore", "update")
+                  "source", "config", "skills", "backup", "restore", "update", "helper")
 
 
 def _agent_rules(role: str) -> tuple[list[str], list[str]]:
@@ -981,6 +981,24 @@ def cmd_update(a):
     out({"updated": True, "backup": str(backup)})
 
 
+def cmd_helper(a):
+    from .. import hosthelper
+    h = home()
+    usage = envfile().get("AGENTHUB_USAGE_FILE") or None
+    if a.action == "serve":
+        hosthelper.serve(h, usage)
+        return
+    exe = shutil.which("agenthub") or sys.argv[0]
+    unit = Path.home() / ".config" / "systemd" / "user" / "agenthub-helper.service"
+    unit.parent.mkdir(parents=True, exist_ok=True)
+    unit.write_text(hosthelper.UNIT.format(exe=exe, path=os.environ.get("PATH", ""), home=h))
+    for c in (["daemon-reload"], ["enable", "--now", "agenthub-helper.service"], ["restart", "agenthub-helper.service"]):
+        if subprocess.run(["systemctl", "--user", *c]).returncode:
+            die(f"systemctl --user {' '.join(c)} nem sikerült")
+    out({"installed": str(unit), "usage_file": usage,
+         "note": "kijelentkezés után is fusson: loginctl enable-linger"})
+
+
 def cmd_doctor(a):
     checks = {}
     checks["docker"] = shutil.which("docker") is not None
@@ -1193,6 +1211,9 @@ def main(argv=None):
     x.add_argument("--yes", action="store_true")
     x.set_defaults(fn=cmd_restore)
     sub.add_parser("update", help="mentés + frissítés a GitHubról + migráció + health check").set_defaults(fn=cmd_update)
+    x = sub.add_parser("helper", help="gépoldali segéd a Dashboardhoz (frissítés gombra, kvóta)")
+    x.add_argument("action", choices=["install", "serve"])
+    x.set_defaults(fn=cmd_helper)
 
     a = p.parse_args(argv)
     role = os.environ.get("AGENTHUB_ROLE")

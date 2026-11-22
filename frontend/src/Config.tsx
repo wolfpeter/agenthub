@@ -3,9 +3,10 @@ import YAML from 'yaml'
 import { api, get, hm, post, type State } from './api'
 import { Dialog, Diff, useRun, useUI } from './ui'
 import { ProjectsAdmin } from './Projects'
+import Update from './Update'
 
-type Scope = 'global' | 'writers' | 'project' | 'source'
-const TABS: [Scope, string][] = [['global', 'Globális'], ['writers', 'Író adapterek'], ['project', 'Projektek'], ['source', 'Források']]
+type Scope = 'global' | 'writers' | 'project' | 'source' | 'update'
+const TABS: [Scope, string][] = [['global', 'Globális'], ['writers', 'Író adapterek'], ['project', 'Projektek'], ['source', 'Források'], ['update', 'Frissítés']]
 const NEW_TPL: Record<string, string> = {
   project: 'id: uj-projekt\nname: Új projekt\nworking_directory: /abszolut/utvonal\n',
   source: 'id: uj-forras\nname: Új forrás\nadapter_type: cli\nsettings:\n  executable: /usr/bin/pelda\n  fields:\n    external_id: id\n    title: title\n',
@@ -30,6 +31,7 @@ export default function Config({ S }: { S: State }) {
   useEffect(() => { setSel(multi ? (ids[0] ?? '+') : '') }, [scope]) // eslint-disable-line react-hooks/exhaustive-deps
   const load = async () => {
     setRes(null)
+    if (scope === 'update') return
     if (multi && sel === '+') { setText(NEW_TPL[scope]); setHist([]); return }
     if (multi && !sel) return
     const r = await run(() => get(`/api/config/${scope}${multi ? '/' + sel : ''}`))
@@ -75,6 +77,7 @@ export default function Config({ S }: { S: State }) {
           <label className="btn cursor-pointer">Import<input type="file" accept=".yaml,.yml,.json" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importFile(f) }} /></label>
         </span>
       </div>
+      {scope === 'update' ? <Update S={S} /> : <>
       {scope === 'project' && <ProjectsAdmin S={S} onChanged={load} />}
       {scope === 'project' && <h3 className="text-[12px] uppercase tracking-wide text-mut font-semibold m-0 mb-1.5">Részletes beállítás (YAML)</h3>}
       {multi && (
@@ -98,6 +101,7 @@ export default function Config({ S }: { S: State }) {
               {i === 0 ? <span className="text-mut text-[12px]">aktuális</span> : <button className="btn sm" onClick={() => rollback(h.version)}>Visszaállít</button>}
             </div>))}
         </section>)}
+      </>}
       {key && (
         <Dialog onClose={() => setKey(null)}>
           <h2 className="text-base font-semibold m-0 mb-2 pr-10">Worker-kulcs: {key.id}</h2>

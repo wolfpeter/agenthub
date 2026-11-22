@@ -82,6 +82,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   const actionsSlot = (
         <div className="flex items-center gap-2 ml-auto pl-2">
           <button className="btn pri" onClick={() => setCreating(true)}>+ Új feladat</button>
+          <Quota />
           <span className="text-[12px] text-mut whitespace-nowrap" title={live ? 'Élő kapcsolat' : 'Újracsatlakozás…'}>
             <span className={'dot ' + (live ? 'on' : 'off')} />{live ? 'élő' : 'újracsatlakozás…'}
           </span>
@@ -131,6 +132,21 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       )}
     </>
   )
+}
+
+// a Claude-előfizetés heti kerete (a gépoldali segéd adja át; nincs adat = nem látszik)
+function Quota() {
+  const [u, setU] = useState<{ week?: number | null; week_reset?: number; five?: number | null; five_reset?: number } | null>(null)
+  useEffect(() => {
+    const f = () => get<any>('/api/usage').then(setU).catch(() => {})
+    f(); const t = setInterval(f, 60000); return () => clearInterval(t)
+  }, [])
+  if (u?.week == null) return null
+  const when = (s?: number) => s ? new Date(s * 1000).toLocaleString('hu-HU', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '?'
+  const c = u.week >= 90 ? 'var(--bad)' : u.week >= 75 ? 'var(--warn)' : undefined
+  return <span className="text-[12px] whitespace-nowrap" style={{ color: c }}
+    title={`Heti keret: ${u.week}% (nullázás ${when(u.week_reset)})\n5 órás keret: ${u.five ?? '?'}% (nullázás ${when(u.five_reset)})`}>
+    Heti kvóta: <b>{u.week}%</b></span>
 }
 
 function ThemeButton() {
