@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { LayoutGroup, motion, AnimatePresence } from 'motion/react'
-import { ago, patch, post, hm, type State, type Ticket } from './api'
+import { ACTOR_HU, EV_HU, STATUS_HU, TYPE_HU, ago, patch, post, hm, type State, type Ticket } from './api'
 import { useRun } from './ui'
 
 const COLS: { key: string; title: string; st: string[]; fold?: boolean }[] = [
@@ -23,8 +23,8 @@ function useFold(k: string): [boolean, () => void] {
 
 export default function Board({ S, proj, onOpen }: { S: State; proj: string; onOpen: (id: number) => void }) {
   const tickets = S.tickets.filter(t => !proj || !t.project_id || t.project_id === proj)
-  const pname = (id: string | null) => S.projects.find(p => p.id === id)?.name ?? (id ?? 'projekt nélkül')
-  const showProj = S.projects.length > 1
+  const pname = (id: string | null) => id ? S.projects.find(p => p.id === id)?.name ?? id : null
+  const showProj = S.projects.length > 1 && !proj  // a kiválasztott projektfülön fölösleges
   const events = S.events.filter(e => !proj || !e.project_id || e.project_id === proj)
   return (
     <LayoutGroup>
@@ -45,9 +45,9 @@ export default function Board({ S, proj, onOpen }: { S: State; proj: string; onO
           <div className="flex flex-col gap-1.5 max-h-[calc(100vh-150px)] overflow-auto pr-0.5">
             {events.slice(0, 60).map(e => (
               <div key={e.id} className="card px-2 py-1 text-[12px] cursor-pointer break-words" style={{ borderLeft: '4px solid var(--mut)' }} onClick={() => onOpen(e.ticket_id)}>
-                <div className="flex gap-1.5 text-mut text-[11px] flex-wrap"><b className="text-fg">{e.event_type}</b>
-                  <span>{e.actor_type}{e.actor_id ? `:${e.actor_id}` : ''}</span><span>{hm(e.created_at)}</span>
-                  {e.new_status && <span>{e.old_status ? e.old_status + ' → ' : ''}{e.new_status}</span>}</div>
+                <div className="flex gap-1.5 text-mut text-[11px] flex-wrap"><b className="text-fg">{EV_HU[e.event_type] ?? e.event_type}</b>
+                  <span>{ACTOR_HU[e.actor_type] ?? e.actor_type}</span><span>{hm(e.created_at)}</span>
+                  {e.new_status && <span>{e.old_status ? (STATUS_HU[e.old_status] ?? e.old_status) + ' → ' : ''}{STATUS_HU[e.new_status] ?? e.new_status}</span>}</div>
                 <div>#{e.ticket_id} {e.title}</div>
                 {e.payload?.note && <div className="text-mut">{String(e.payload.note)}</div>}
               </div>))}
@@ -83,10 +83,10 @@ function Card({ t, proj, onOpen }: { t: Ticket; proj: string | null; onOpen: (id
       whileHover={{ y: -2, boxShadow: '0 4px 14px rgb(0 0 0 / .12)' }} transition={{ duration: .25 }}
       className="card px-2.5 py-2 mb-2 cursor-pointer" style={{ borderLeft: `4px solid ${PCOL[t.priority]}` }}
       onClick={() => onOpen(t.id)} data-ticket={t.id}>
-      <div className="font-medium">{t.title}</div>
+      <div className="font-medium leading-snug"><span className="text-mut font-normal text-[12px] mr-1">#{t.id}</span>{t.title}</div>
       <div className="flex flex-wrap gap-1.5 mt-1 text-[12px] text-mut items-center">
         <span className="font-semibold" style={{ color: PCOL[t.priority] }} title="Prioritás">P{t.priority}</span>
-        {proj && <span className="tag">{proj}</span>}<span className="tag">{t.type}</span>
+        {proj && <span className="tag">{proj}</span>}<span className="tag">{TYPE_HU[t.type] ?? t.type}</span>
         {t.hotfix && <span className="tag text-bad" style={{ borderColor: 'var(--bad)' }} title="Teszt után azonnal élesítendő">HOTFIX</span>}
         {t.status === 'BLOCKED' && <span className="tag" title={t.last_error ?? ''}>külső félre vár</span>}
         {t.status === 'FAILED' && <span className="tag text-bad" title={t.last_error ?? ''}>hiba</span>}

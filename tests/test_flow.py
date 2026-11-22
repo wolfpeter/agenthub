@@ -722,3 +722,15 @@ def test_project_disable_delete_and_folder_picker(dash, client, tmp_path, monkey
     assert dash.get("/api/fs/dirs?path=/home/u/Projektek/repo")["parent"] == "/home/u/Projektek"
     assert client.get("/api/fs/dirs?path=/home/u/Projektek/../..", headers=dash.h).status_code == 400
     assert client.get("/api/fs/dirs?path=/etc", headers=dash.h).status_code == 400
+
+
+def test_dashboard_comment_reaches_worker(dash, two_projects):
+    wa, _ = two_projects
+    t = new(dash, "alpha", start_approved=True)
+    dash.post(f"/api/tickets/{t['id']}/comment", {"text": "  Csak a mobil nézetet javítsd.  "})
+    dash.post(f"/api/tickets/{t['id']}/comment", {"text": " "}, ok=400)
+    r = nxt(wa)
+    assert [c["text"] for c in r["ticket"]["comments"]] == ["Csak a mobil nézetet javítsd."]
+    wa.post(f"/api/tickets/{t['id']}/note", {"text": "worker note"})
+    wa.post(f"/api/tickets/{t['id']}/comment", {"text": "álcázott"}, ok=403)
+    assert [c["text"] for c in wa.get(f"/api/tickets/{t['id']}")["comments"]] == ["Csak a mobil nézetet javítsd."]

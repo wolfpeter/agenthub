@@ -1,55 +1,46 @@
-import { useEffect, useState } from 'react'
-import { FINAL, STATUS_HU, ago, get, hm, num, patch, post, type Action, type Ev, type Question, type State, type Ticket } from './api'
+import { useEffect, useState, type ReactNode } from 'react'
+import { ACTOR_HU, EV_HU, FINAL, STATUS_HU, TYPE_HU, ago, get, hm, num, patch, post, stColor, type Action, type Ev, type Question, type State, type Ticket } from './api'
 import { Dialog, Skel, useRun, useUI } from './ui'
 import { ActionCard } from './Approval'
 import { TYPES } from './NewTicket'
 
 interface Ref { id: number; source_id: string; external_id: string; url: string | null; merged_from_ticket_id: number | null }
-interface Detail extends Ticket { events: Ev[]; questions: Question[]; actions: Action[]; runs: any[]; source_refs: Ref[] }
+interface Detail extends Ticket { events: Ev[]; questions: Question[]; actions: Action[]; runs: any[]; source_refs: Ref[]; comments: { text: string; at: string }[] }
 
 export default function TicketDialog({ id, S, onClose }: { id: number; S: State; onClose: () => void }) {
   const run = useRun()
-  const { confirm } = useUI()
   const [d, setD] = useState<Detail | null>(null)
   const [edit, setEdit] = useState<{ title: string; description: string; type: string } | null>(null)
-  const [note, setNote] = useState('')
-  const [triageProj, setTriageProj] = useState('')
+  const [tab, setTab] = useState('')
   const reload = () => get<Detail>(`/api/tickets/${id}`).then(setD).catch(e => run(() => Promise.reject(e)))
   useEffect(() => { reload() }, [id, S.now]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const tr = async (action: string, ok: string, extra: object = {}) => {
-    if (await run(() => post(`/api/tickets/${id}/transition`, { action, note: note || undefined, ...extra }), ok)) { setNote(''); reload() }
-  }
   const saveEdit = async () => { if (edit && await run(() => patch(`/api/tickets/${id}`, edit), 'Mentve')) { setEdit(null); reload() } }
 
-  if (!d) return <Dialog onClose={onClose}><div className="mt-6"><Skel h={120} /></div></Dialog>
+  if (!d) return <Dialog onClose={onClose} wide><div className="mt-6"><Skel h={120} /></div></Dialog>
   const st = d.status
-  const final = FINAL.includes(st)
   const pname = S.projects.find(p => p.id === d.project_id)?.name
   const desc = parseDesc(d.description || '')
   // a forrás legutóbbi állapota (a migrált ticketnél a leírás helyi, a kártya szövege csak itt látszik)
   const src = [...d.events].reverse().find(e => e.event_type === 'source_update')?.payload
   const list = src?.list ?? desc.list, labels = src?.labels ?? desc.labels
   const srcComments = splitComments(src?.comments ?? desc.comments)
-  const srcDesc = src?.kept_local?.includes('description') ? src?.description : null
+  const srcDesc = src?.kept_local?.includes('description') ? src?.description?.trim() : null
   const openQs = d.questions.filter(q => q.status === 'OPEN')
+  const doneQs = d.questions.filter(q => q.status !== 'OPEN')
+  const tabs: [string, string, number | null][] = [
+    ['desc', 'Leírás', null], ['comments', 'Kommentek a forrásban', srcComments.length], ['notes', 'Munkajegyzetek', desc.notes.length],
+    ['qs', 'Megválaszolt kérdések', doneQs.length], ['actions', 'Műveletek', d.actions.length], ['history', 'Előzmények', d.events.length],
+    ['runs', 'Futások', d.runs.length]]
+  const shown = tabs.filter(([k, , n]) => k === 'desc' || k === 'history' || (n ?? 0) > 0)
+  // üres leírásnál az első tartalmas fül nyílik (pl. a munkajegyzetek)
+  const def = srcDesc || desc.body ? 'desc' : shown.find(([k, , n]) => k !== 'history' && (n ?? 0) > 0)?.[0] ?? 'desc'
+  const cur = shown.some(([k]) => k === tab) ? tab : def
   return (
     <Dialog onClose={onClose} wide>
+      {/* fej: azonosító, cím, a legfontosabb jellemzők */}
       <div className="pr-12">
-        <div className="flex flex-wrap gap-1.5 items-center text-[12px]">
-          <span className="text-mut font-mono">#{d.id}</span>
-          <Chip c={stColor(st)}>{STATUS_HU[st] ?? st}</Chip>
-          <Chip>{pname ?? 'projekt nélkül'}</Chip>
-          <Chip>{TYPE_HU[d.type] ?? d.type}</Chip>
-          <Chip c={`var(--p${d.priority})`}>P{d.priority}</Chip>
-          {d.start_approved && <Chip c="var(--ok)">Mehet</Chip>}
-          {d.hotfix && <Chip c="var(--bad)">HOTFIX</Chip>}
-          {list && <Chip>{list}</Chip>}
-          {labels && String(labels).split(', ').map(l => <Chip key={l} c={/hiba/i.test(l) ? 'var(--bad)' : undefined}>{l}</Chip>)}
-          {d.source_url && <a className="ml-1" href={d.source_url} target="_blank" rel="noreferrer">Forrás ↗</a>}
-        </div>
         {edit ? (
-          <div className="mt-2">
+          <div>
             <input className="inp font-semibold" aria-label="Cím" value={edit.title} onChange={e => setEdit({ ...edit, title: e.target.value })} />
             <select className="inp mt-2 !w-auto" aria-label="Típus" value={edit.type} onChange={e => setEdit({ ...edit, type: e.target.value })}>
               {[...new Set([...TYPES, edit.type])].map(t => <option key={t}>{t}</option>)}</select>
@@ -57,102 +48,140 @@ export default function TicketDialog({ id, S, onClose }: { id: number; S: State;
             <div className="flex gap-2 mt-2"><button className="btn pri" onClick={saveEdit}>Mentés</button><button className="btn" onClick={() => setEdit(null)}>Mégse</button></div>
           </div>
         ) : (
-          <h2 className="text-xl font-semibold m-0 mt-2 leading-snug">{d.title}</h2>
+          <h2 className="text-xl font-semibold m-0 leading-snug"><span className="text-mut font-normal mr-2">#{d.id}</span>{d.title}</h2>
         )}
-        <div className="text-mut text-[12px] mt-1">Létrehozta: {ACTOR_HU[d.created_by ?? ''] ?? d.created_by} · {hm(d.created_at)} · frissítve {ago(d.updated_at)}</div>
+        <div className="flex flex-wrap gap-1.5 items-center text-[12px] mt-2">
+          <Chip c={stColor(st)} strong>{STATUS_HU[st] ?? st}</Chip>
+          <Chip>{pname ?? 'projekt nélkül'}</Chip>
+          <Chip>{TYPE_HU[d.type] ?? d.type}</Chip>
+          <Chip c={`var(--p${d.priority})`}>P{d.priority}</Chip>
+          {d.start_approved && <Chip c="var(--ok)">Mehet</Chip>}
+          {d.hotfix && <Chip c="var(--bad)">HOTFIX</Chip>}
+          {list && <Chip><span className="text-mut">Trello-lista:</span> {list}</Chip>}
+          {labels && String(labels).split(', ').map(l => <Chip key={l} c={/hiba/i.test(l) ? 'var(--bad)' : undefined}>{l}</Chip>)}
+          {d.source_url && <a className="ml-1" href={d.source_url} target="_blank" rel="noreferrer">Megnyitás a forrásban ↗</a>}
+        </div>
       </div>
 
-      {openQs.length > 0 && <Sec t={`Rád vár (${openQs.length})`} hl>{openQs.map(q => <Q key={q.id} q={q} onDone={reload} />)}</Sec>}
-
-      {/* döntések és státuszgombok egy helyen */}
-      {!final && (
-        <Sec t="Döntés">
-          <div className="flex flex-wrap gap-3 items-center">
-            {['READY', 'NEW', 'NEEDS_TRIAGE'].includes(st) && (
-              <label className="flex gap-1 items-center"><input type="checkbox" checked={d.start_approved} onChange={e => run(() => post(`/api/tickets/${id}/go`, { value: e.target.checked })).then(reload)} /> Mehet
-                {d.start_approved_by === 'coordinator' && <b className="text-warn" title={d.start_approved_reason ?? ''}> · Coordinator pipálta: {d.start_approved_reason}</b>}</label>)}
-            <label className="flex gap-1 items-center" title="Élesítési engedély erre a szállításra: a worker elsőként veszi fel, és teszt után azonnal kiadja">
-              <input type="checkbox" checked={d.hotfix} onChange={e => run(() => post(`/api/tickets/${id}/hotfix`, { value: e.target.checked })).then(reload)} /> Hotfix
-              {d.hotfix && d.hotfix_by && <span className="text-mut"> · {d.hotfix_by}</span>}</label>
-            <span className="flex-1" />
-            {(st === 'NEEDS_TRIAGE' || st === 'NEW') && <>
-              <select className="inp !w-auto" aria-label="Projekt" value={triageProj || d.project_id || ''} onChange={e => setTriageProj(e.target.value)}>
-                <option value="">— projekt —</option>{S.projects.filter(p => p.is_active).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-              <button className="btn ok" disabled={!(triageProj || d.project_id)} onClick={() => tr('triage', 'Besorolva', { project_id: triageProj || d.project_id })}>Besorol (Indítható)</button></>}
-            {(st === 'REVIEW' || st === 'AWAITING_RELEASE') && <>
-              <button className="btn ok" onClick={() => tr('accept', 'Elfogadva')}>Elfogad</button>
-              <button className="btn" disabled={!note.trim()} title={note.trim() ? '' : 'A visszaküldéshez megjegyzés kell'} onClick={() => tr('return', 'Visszaküldve')}>Visszaküld</button></>}
-            {st === 'FAILED' && <button className="btn ok" onClick={() => tr('retry', 'Újrapróbálás indul')}>Újrapróbál</button>}
-            {st === 'BLOCKED' && <button className="btn ok" onClick={() => tr('retry', 'Feloldva')}>Feloldva (Indítható)</button>}
-            {!edit && <button className="btn" onClick={() => setEdit({ title: d.title, description: d.description, type: d.type })}>Szerkesztés</button>}
-            <button className="btn bad" onClick={async () => { if (await confirm(`Megszakítod a(z) #${id} feladatot?`)) tr('cancel', 'Megszakítva') }}>Megszakít</button>
+      <div className="flex flex-col md:flex-row gap-4 mt-3">
+        {/* bal: amit olvasni kell */}
+        <div className="flex-1 min-w-0">
+          {openQs.length > 0 && <Box t={`Rád vár (${openQs.length})`} c="var(--warn)">{openQs.map(q => <Q key={q.id} q={q} onDone={reload} />)}</Box>}
+          {d.last_error && <Box t={st === 'BLOCKED' ? 'Mire vár' : 'Utolsó hiba'} c="var(--bad)"><Text s={d.last_error} /></Box>}
+          {d.result_summary && <Box t="Eredmény" c="var(--ok)"><Text s={d.result_summary} /></Box>}
+          <div className="flex flex-wrap gap-1 border-b border-line mb-2" role="tablist">
+            {shown.map(([k, t, n]) => (
+              <button key={k} role="tab" aria-selected={cur === k} onClick={() => setTab(k)}
+                className={'px-2.5 py-1 text-[13px] -mb-px border-b-2 ' + (cur === k ? 'border-acc text-fg font-semibold' : 'border-transparent text-mut hover:text-fg')}>
+                {t}{n ? <span className="text-mut font-normal"> {n}</span> : null}</button>))}
           </div>
-          {(st === 'REVIEW' || st === 'AWAITING_RELEASE') && <input className="inp mt-2" placeholder="Megjegyzés (visszaküldéshez kötelező)" value={note} onChange={e => setNote(e.target.value)} />}
-        </Sec>)}
-
-      {d.last_error && <Sec t="Utolsó hiba"><div className="txt" style={{ color: 'var(--bad)' }}><Text s={d.last_error} /></div></Sec>}
-      {d.result_summary && <Sec t="Eredmény"><div className="txt"><Text s={d.result_summary} /></div></Sec>}
-
-      <Sec t="Leírás">
-        <div className="txt" style={{ maxHeight: '40vh' }}>{desc.body ? <Text s={desc.body} /> : <span className="text-mut">(nincs leírás)</span>}</div>
-        {desc.ref && <div className="text-mut text-[12px] mt-1">Eredeti hivatkozás: {desc.ref}</div>}
-      </Sec>
-      {srcDesc && <Sec t="A kártya mostani leírása (a forrásban)"><div className="txt" style={{ maxHeight: '30vh' }}><Text s={srcDesc} /></div></Sec>}
-      {srcComments.length > 0 && (
-        <Sec t={`Kommentek a forrásban (${srcComments.length})`}>
-          <div className="flex flex-col gap-2 overflow-auto" style={{ maxHeight: '45vh' }}>
+          {cur === 'desc' && <>
+            <div className="txt" style={{ maxHeight: '55vh' }}>{(srcDesc || desc.body) ? <Text s={srcDesc || desc.body} /> : <span className="text-mut">(nincs leírás)</span>}</div>
+            {srcDesc && desc.body && desc.body !== srcDesc && (
+              <details className="mt-2"><summary className="cursor-pointer text-[12px] text-mut">Helyi (régebbi) leírás</summary>
+                <div className="txt mt-1"><Text s={desc.body} /></div></details>)}
+          </>}
+          {cur === 'comments' && <div className="flex flex-col gap-2">
             {srcComments.map((c, i) => (
               <div key={i} className="txt !max-h-none" style={{ borderLeft: `3px solid ${/wolf/i.test(c.who) ? 'var(--acc)' : 'var(--warn)'}` }}>
-                <div className="text-[12px] mb-0.5"><b>{c.who}</b> <span className="text-mut">{hm(c.at)}</span></div><Text s={c.text} /></div>))}
-          </div>
-        </Sec>)}
-      {desc.notes.length > 0 && (
-        <Sec t={`Munkajegyzetek (${desc.notes.length})`}>
-          <details open={desc.notes.length <= 4}><summary className="cursor-pointer text-[12px] text-mut">megjelenítés</summary>
-            <div className="flex flex-col gap-1.5 mt-1">{desc.notes.map((n, i) => (
-              <div key={i} className="text-[13px]"><span className="text-mut text-[12px]">{n.at} · {n.who}</span><div style={{ whiteSpace: 'pre-wrap' }}><Text s={n.text} /></div></div>))}</div>
-          </details>
-        </Sec>)}
-      {d.source_refs.length > 0 && <Sec t="Összevont források"><div className="text-[13px] flex flex-wrap gap-3">{d.source_refs.map(r => (
-        <span key={r.id}>{r.url ? <a href={r.url} target="_blank" rel="noreferrer">{r.source_id} {r.external_id}</a> : `${r.source_id} ${r.external_id}`}{r.merged_from_ticket_id && <span className="text-mut"> (#{r.merged_from_ticket_id})</span>}</span>))}</div></Sec>}
+                <div className="text-[12px] mb-0.5"><b>{c.who}</b> <span className="text-mut">{hm(c.at)}</span></div><Text s={c.text} /></div>))}</div>}
+          {cur === 'notes' && <div className="flex flex-col gap-2">{[...desc.notes].reverse().map((n, i) => (
+            <div key={i} className="text-[13px]"><span className="text-mut text-[12px]">{n.at} · {n.who}</span><div className="whitespace-pre-wrap break-words"><Text s={n.text} /></div></div>))}</div>}
+          {cur === 'qs' && doneQs.map(q => <Q key={q.id} q={q} onDone={reload} />)}
+          {cur === 'actions' && d.actions.map(a => <ActionCard key={a.id} a={a} />)}
+          {cur === 'history' && <History events={d.events} />}
+          {cur === 'runs' && (
+            <table className="w-full text-[12px]"><thead><tr className="text-left text-mut"><th>Modell</th><th>Token (be/ki)</th><th>Költség</th><th>Eredmény</th><th>Kezdés</th></tr></thead>
+              <tbody>{d.runs.map(r => (
+                <tr key={r.id}><td>{r.model ?? '—'}</td><td>{num(r.tokens_in)} / {num(r.tokens_out)}</td>
+                  <td>{r.estimated_cost == null ? '—' : '$' + r.estimated_cost.toFixed(3)} <span className="text-mut">({r.cost_source ?? 'ismeretlen'})</span></td>
+                  <td>{r.outcome ?? '—'}</td><td>{hm(r.started_at)}</td></tr>))}</tbody></table>)}
+        </div>
 
-      {d.questions.length > openQs.length && <Sec t="Megválaszolt kérdések">{d.questions.filter(q => q.status !== 'OPEN').map(q => <Q key={q.id} q={q} onDone={reload} />)}</Sec>}
-      {d.actions.length > 0 && <Sec t="Kapcsolódó műveletek">{d.actions.map(a => <ActionCard key={a.id} a={a} />)}</Sec>}
-      {d.runs.length > 0 && (
-        <Sec t="Futások">
-          <table className="w-full text-[12px]"><thead><tr className="text-left text-mut"><th>Modell</th><th>Token (be/ki)</th><th>Költség</th><th>Eredmény</th><th>Kezdés</th></tr></thead>
-            <tbody>{d.runs.map(r => (
-              <tr key={r.id}><td>{r.model ?? '—'}</td><td>{num(r.tokens_in)} / {num(r.tokens_out)}</td>
-                <td>{r.estimated_cost == null ? '—' : '$' + r.estimated_cost.toFixed(3)} <span className="text-mut">({r.cost_source ?? 'ismeretlen'})</span></td>
-                <td>{r.outcome ?? '—'}</td><td>{hm(r.started_at)}</td></tr>))}</tbody></table>
-        </Sec>)}
-      <History events={d.events} />
+        {/* jobb: döntés és megjegyzés */}
+        <aside className="md:w-[300px] flex-none flex flex-col gap-3">
+          <Decide d={d} S={S} reload={reload} onEdit={() => setEdit({ title: d.title, description: d.description, type: d.type })} editing={!!edit} />
+          <Comments d={d} reload={reload} />
+          <div className="text-mut text-[12px] flex flex-col gap-0.5">
+            <span>Létrehozta: {ACTOR_HU[d.created_by ?? ''] ?? d.created_by}, {hm(d.created_at)}</span>
+            <span>Frissítve: {ago(d.updated_at)}</span>
+            {desc.ref && <span className="break-all">Eredeti hivatkozás: {desc.ref}</span>}
+            {d.source_refs.length > 0 && <span>Összevont források: {d.source_refs.map(r => (
+              <span key={r.id} className="mr-2">{r.url ? <a href={r.url} target="_blank" rel="noreferrer">{r.source_id}</a> : r.source_id}{r.merged_from_ticket_id && ` (#${r.merged_from_ticket_id})`}</span>))}</span>}
+          </div>
+        </aside>
+      </div>
     </Dialog>
   )
 }
 
-const TYPE_HU: Record<string, string> = { bug: 'hiba', feature: 'fejlesztés', task: 'feladat', question: 'kérdés' }
-const ACTOR_HU: Record<string, string> = { human: 'ember', coordinator: 'Coordinator', worker: 'Worker', system: 'rendszer' }
-const EV_HU: Record<string, string> = {
-  created: 'Létrehozva', classified: 'Besorolva', routed: 'Szabály szerint besorolva', triaged: 'Besorolva', note: 'Megjegyzés',
-  legacy: 'Régi napló', migrated: 'Átköltöztetve', status_fix: 'Állapot javítva', source_update: 'A forrás változott',
-  possible_duplicate: 'Lehetséges duplikátum', merged_in: 'Ide összevonva', merged: 'Összevonva', go_on: 'Mehet bekapcsolva',
-  go_off: 'Mehet kikapcsolva', go_restored: 'Mehet visszaállítva', hotfix_on: 'Hotfix bekapcsolva', hotfix_off: 'Hotfix kikapcsolva',
-  claimed: 'A Worker felvette', edited: 'Szerkesztve', answered: 'Megválaszolva', dismissed: 'Elvetve', reopened: 'Újranyitva',
-  question: 'Kérdés', answer: 'Válasz', action_proposed: 'Művelet javasolva', blocked: 'Blokkolva', released: 'Kiadva',
-  release_failed: 'Kiadás sikertelen', returned: 'Visszaküldve', failed: 'Hiba', retry: 'Újrapróba', auto_retry: 'Automatikus újrapróba',
-  awaiting_approval: 'Jóváhagyásra vár', actions_settled: 'Műveletek lezárva', finished: 'Kész', accepted: 'Elfogadva',
+// döntések és státuszgombok egy helyen
+function Decide({ d, S, reload, onEdit, editing }: { d: Detail; S: State; reload: () => void; onEdit: () => void; editing: boolean }) {
+  const run = useRun()
+  const { confirm } = useUI()
+  const [note, setNote] = useState('')
+  const [triageProj, setTriageProj] = useState('')
+  const st = d.status, id = d.id
+  const tr = async (action: string, ok: string, extra: object = {}) => {
+    if (await run(() => post(`/api/tickets/${id}/transition`, { action, note: note || undefined, ...extra }), ok)) { setNote(''); reload() }
+  }
+  if (FINAL.includes(st)) return null
+  return (
+    <Box t="Döntés">
+      <div className="flex flex-col gap-2">
+        {['READY', 'NEW', 'NEEDS_TRIAGE'].includes(st) && (
+          <label className="flex gap-1.5 items-start"><input className="mt-1" type="checkbox" checked={d.start_approved} onChange={e => run(() => post(`/api/tickets/${id}/go`, { value: e.target.checked })).then(reload)} />
+            <span><b>Mehet</b> <span className="text-mut text-[12px]">— a Worker elkezdheti</span>
+              {d.start_approved_by === 'coordinator' && <span className="block text-warn text-[12px]">Coordinator pipálta: {d.start_approved_reason}</span>}</span></label>)}
+        <label className="flex gap-1.5 items-start" title="Élesítési engedély erre a szállításra: a worker elsőként veszi fel, és teszt után azonnal kiadja">
+          <input className="mt-1" type="checkbox" checked={d.hotfix} onChange={e => run(() => post(`/api/tickets/${id}/hotfix`, { value: e.target.checked })).then(reload)} />
+          <span><b>Hotfix</b> <span className="text-mut text-[12px]">— teszt után azonnal élesítheti</span>{d.hotfix && d.hotfix_by && <span className="text-mut text-[12px]"> ({d.hotfix_by})</span>}</span></label>
+        {(st === 'NEEDS_TRIAGE' || st === 'NEW') && <div className="flex gap-1.5">
+          <select className="inp" aria-label="Projekt" value={triageProj || d.project_id || ''} onChange={e => setTriageProj(e.target.value)}>
+            <option value="">— projekt —</option>{S.projects.filter(p => p.is_active).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+          <button className="btn ok whitespace-nowrap" disabled={!(triageProj || d.project_id)} onClick={() => tr('triage', 'Besorolva', { project_id: triageProj || d.project_id })}>Besorol</button></div>}
+        {(st === 'REVIEW' || st === 'AWAITING_RELEASE') && <>
+          <input className="inp" placeholder="Megjegyzés (visszaküldéshez kötelező)" value={note} onChange={e => setNote(e.target.value)} />
+          <div className="flex gap-1.5"><button className="btn ok" onClick={() => tr('accept', 'Elfogadva')}>Elfogad</button>
+            <button className="btn" disabled={!note.trim()} title={note.trim() ? '' : 'A visszaküldéshez megjegyzés kell'} onClick={() => tr('return', 'Visszaküldve')}>Visszaküld</button></div></>}
+        {st === 'FAILED' && <button className="btn ok" onClick={() => tr('retry', 'Újrapróbálás indul')}>Újrapróbál</button>}
+        {st === 'BLOCKED' && <button className="btn ok" onClick={() => tr('retry', 'Feloldva')}>Feloldva (Indítható)</button>}
+        <div className="flex gap-1.5 pt-1 border-t border-line">
+          {!editing && <button className="btn" onClick={onEdit}>Szerkesztés</button>}
+          <button className="btn bad ml-auto" onClick={async () => { if (await confirm(`Megszakítod a(z) #${id} feladatot?`)) tr('cancel', 'Megszakítva') }}>Megszakít</button></div>
+      </div>
+    </Box>)
 }
-const stColor = (st: string) => ({ READY: 'var(--ok)', IN_PROGRESS: 'var(--acc)', WAITING_FOR_INPUT: 'var(--warn)', PENDING_APPROVAL: 'var(--warn)',
-  NEEDS_TRIAGE: 'var(--warn)', NEW: 'var(--warn)', BLOCKED: 'var(--bad)', FAILED: 'var(--bad)', AWAITING_RELEASE: 'var(--acc)', REVIEW: 'var(--acc)' } as Record<string, string>)[st]
 
-const Chip = ({ c, children }: { c?: string; children: React.ReactNode }) => (
-  <span className="tag !text-[12px] !px-1.5 !py-px" style={c ? { color: c, borderColor: c } : undefined}>{children}</span>)
+// Peter megjegyzései: a Worker utasításként kapja (a ticket állapotát nem változtatja)
+function Comments({ d, reload }: { d: Detail; reload: () => void }) {
+  const run = useRun()
+  const [text, setText] = useState('')
+  const add = async () => { if (await run(() => post(`/api/tickets/${d.id}/comment`, { text }), 'Megjegyzés hozzáadva')) { setText(''); reload() } }
+  return (
+    <Box t={`Megjegyzés a Workernek${d.comments.length ? ` (${d.comments.length})` : ''}`} c="var(--acc)">
+      {d.comments.map((c, i) => <div key={i} className="text-[13px] mb-1.5 whitespace-pre-wrap break-words"><span className="text-mut text-[11px] block">{hm(c.at)}</span>{c.text}</div>)}
+      <textarea className="inp" rows={3} placeholder="Pl. csak a mobilnézetet javítsd; a kártyára ne írj." value={text} onChange={e => setText(e.target.value)} />
+      <div className="flex items-center gap-2 mt-1">
+        <button className="btn pri" disabled={!text.trim()} onClick={add}>Hozzáadás</button>
+        <span className="text-mut text-[11px] leading-tight">A Worker utasításként olvassa; az állapotot nem változtatja.</span></div>
+    </Box>)
+}
+
+const Box = ({ t, c, children }: { t: string; c?: string; children: ReactNode }) => (
+  <section className="rounded-md border p-2.5 mb-3 last:mb-0 min-w-0" style={{ borderColor: c ?? 'var(--line)', background: c ? `color-mix(in srgb,${c} 7%,transparent)` : undefined }}>
+    <h3 className="text-[12px] uppercase tracking-wide m-0 mb-1.5 font-semibold" style={{ color: c ?? 'var(--mut)' }}>{t}</h3>
+    <div className="text-[13.5px] break-words">{children}</div></section>)
+
+const Chip = ({ c, strong, children }: { c?: string; strong?: boolean; children: ReactNode }) => (
+  <span className={'tag !text-[12px] !px-1.5 !py-px' + (strong ? ' font-semibold' : '')}
+    style={c ? { color: c, borderColor: c, background: strong ? `color-mix(in srgb,${c} 12%,transparent)` : undefined } : undefined}>{children}</span>)
 
 // URL-ek kattinthatók, a markdown-kép egy rövid „kép” link
 function Text({ s }: { s: string }) {
   const t = s.replace(/[\u200b-\u200d\ufeff]/g, '').replace(/^#{1,6}\s+/gm, '').replace(/\*\*([^*\n]+)\*\*/g, '$1').replace(/\n{3,}/g, '\n\n')
-    .replace(/!\[[^\]]*\]\((\S+?)(?:\s+"[^"]*")?\)/g, ' $1 ').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)(?:\s+"[^"]*")?\)/g, '$1 ($2)')
+    .replace(/!\[[^\]]*\]\((\S+?)(?:\s+"[^"]*")?\)/g, ' $1 ').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)(?:\s+"[^"]*")?\)/g, (_, l: string, u: string) => u.includes(l.replace(/^https?:\/\//, '').replace(/…$/, '')) ? u : `${l} (${u})`)
+    .trim()
   return <>{t.split(/(https?:\/\/[^\s)"\]>]+)/).map((p, i) => i % 2
     ? <a key={i} href={p} target="_blank" rel="noreferrer">{/\.(png|jpe?g|webp|gif)|\/download\//i.test(p) ? '[kép]' : p.replace(/^https?:\/\//, '').slice(0, 60) + (p.length > 68 ? '…' : '')}</a>
     : p)}</>
@@ -202,10 +231,13 @@ function evText(e: Ev): string {
 
 function History({ events }: { events: Ev[] }) {
   const [all, setAll] = useState(false)
-  const ev = [...events].reverse()
+  const [legacy, setLegacy] = useState(false)
+  const nLegacy = events.filter(e => e.event_type === 'legacy').length
+  const ev = [...events].reverse().filter(e => legacy || e.event_type !== 'legacy')
   const shown = all ? ev : ev.slice(0, 15)
   return (
-    <Sec t={`Eseménytörténet (${ev.length})`}>
+    <div>
+      {nLegacy > 0 && <label className="flex gap-1 items-center text-[12px] text-mut mb-1.5"><input type="checkbox" checked={legacy} onChange={e => setLegacy(e.target.checked)} /> régi feladatlap-napló is ({nLegacy})</label>}
       <div className="text-[12px] flex flex-col gap-1">
         {shown.map(e => {
           const txt = evText(e)
@@ -215,26 +247,22 @@ function History({ events }: { events: Ev[] }) {
               <div><b>{EV_HU[e.event_type] ?? e.event_type}</b>
                 {e.new_status && <span> · {e.old_status ? (STATUS_HU[e.old_status] ?? e.old_status) + ' → ' : ''}{STATUS_HU[e.new_status] ?? e.new_status}</span>}
                 <span className="text-mut"> · {ACTOR_HU[e.actor_type] ?? e.actor_type}</span>
-                {txt && <div className="text-[12px]" style={{ whiteSpace: 'pre-wrap' }}>{txt.length > 400 ? txt.slice(0, 400) + '…' : txt}</div>}</div>
+                {txt && <div className="text-[12px] whitespace-pre-wrap break-words">{txt.length > 400 ? txt.slice(0, 400) + '…' : txt}</div>}</div>
             </div>)
         })}
       </div>
       {ev.length > 15 && <button className="btn sm mt-1" onClick={() => setAll(!all)}>{all ? 'Kevesebb' : `Mind (${ev.length})`}</button>}
-    </Sec>)
+    </div>)
 }
-
-const Sec = ({ t, children, hl }: { t: string; children: React.ReactNode; hl?: boolean }) => (
-  <section className={'mt-3 pt-2 border-t border-line' + (hl ? ' rounded-md p-2 border' : '')} style={hl ? { borderColor: 'var(--warn)', background: 'color-mix(in srgb,var(--warn) 8%,transparent)' } : undefined}>
-    <h3 className="text-[12px] uppercase tracking-wide text-mut m-0 mb-1.5 font-semibold" style={hl ? { color: 'var(--warn)' } : undefined}>{t}</h3>{children}</section>)
 
 function Q({ q, onDone }: { q: Question; onDone: () => void }) {
   const run = useRun()
   const [text, setText] = useState('')
   const send = async (answer: string) => { if (await run(() => post(`/api/questions/${q.id}/answer`, { answer }), 'Válasz elküldve')) onDone() }
   return (
-    <div className="mb-2">
+    <div className="mb-3 last:mb-0">
       <div className="font-semibold">{q.question}</div>
-      {q.context && <div className="text-[12px] text-mut whitespace-pre-wrap">{q.context}</div>}
+      {q.context && <div className="text-[12px] text-mut whitespace-pre-wrap break-words"><Text s={q.context} /></div>}
       {q.status === 'OPEN' ? (
         <>
           {q.suggested_answer && (

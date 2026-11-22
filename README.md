@@ -43,6 +43,7 @@ Az agenteket mindig kézzel kell elindítani, látható terminálban. A `run` a 
 
 A Dashboardon:
 - Projektet a fejléc „+ Projekt” gombjával veszel fel (mappát választasz), a Konfiguráció → Projektek listában elengeded (aktív kapcsoló) vagy törlöd (csak ticket nélküli projektet). Az elengedett projekt eltűnik a fejlécből, Worker nem indul rá, és nem sorol be oda senki. A Dashboardon felvett projekt Worker-kulcsát az első `agenthub worker run` hozza létre.
+- A ticket részleteinél a „Megjegyzés a Workernek” dobozba írt szöveget a Worker utasításként kapja (a ticket `comments` mezője); a ticket állapotát nem változtatja. A fejléc ☾/☀ gombja vált világos és sötét téma között (alapból a rendszeré).
 - Felveszed a ticketet, és bepipálod a **Mehet**-et. A Worker csak ezután veszi fel.
 - Válaszolsz a Worker kérdéseire.
 - Jóváhagyod vagy elutasítod a külső műveleteket.

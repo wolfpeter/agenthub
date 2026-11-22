@@ -67,3 +67,20 @@ export const STATUS_HU: Record<string, string> = {
   BLOCKED: 'Blokkolt (külső félre vár)', FAILED: 'Hiba', CANCELLED: 'Megszakítva',
 }
 export const FINAL = ['COMPLETED', 'CANCELLED']
+
+// a ticketek magyar címkéi (tábla, ticketnézet)
+export const TYPE_HU: Record<string, string> = { bug: 'hiba', feature: 'fejlesztés', task: 'feladat', question: 'kérdés' }
+export const ACTOR_HU: Record<string, string> = { human: 'ember', coordinator: 'Coordinator', worker: 'Worker', system: 'rendszer' }
+export const EV_HU: Record<string, string> = {
+  created: 'Létrehozva', classified: 'Besorolva', routed: 'Szabály szerint besorolva', triaged: 'Besorolva', note: 'Megjegyzés',
+  comment: 'Megjegyzés a Workernek', legacy: 'Régi napló', migrated: 'Átköltöztetve', status_fix: 'Állapot javítva', source_update: 'A forrás változott',
+  possible_duplicate: 'Lehetséges duplikátum', merged_in: 'Ide összevonva', merged: 'Összevonva', go_on: 'Mehet bekapcsolva',
+  go_off: 'Mehet kikapcsolva', go_restored: 'Mehet visszaállítva', hotfix_on: 'Hotfix bekapcsolva', hotfix_off: 'Hotfix kikapcsolva',
+  claimed: 'A Worker felvette', edited: 'Szerkesztve', answered: 'Megválaszolva', dismissed: 'Elvetve', reopened: 'Újranyitva',
+  question: 'Kérdés', answer: 'Válasz', action_proposed: 'Művelet javasolva', blocked: 'Blokkolva', released: 'Kiadva',
+  release_failed: 'Kiadás sikertelen', returned: 'Visszaküldve', failed: 'Hiba', retry: 'Újrapróba', auto_retry: 'Automatikus újrapróba',
+  awaiting_approval: 'Jóváhagyásra vár', actions_settled: 'Műveletek lezárva', finished: 'Kész', accepted: 'Elfogadva',
+}
+export const stColor = (st: string) => ({ READY: 'var(--ok)', IN_PROGRESS: 'var(--acc)', WAITING_FOR_INPUT: 'var(--warn)', PENDING_APPROVAL: 'var(--warn)',
+  NEEDS_TRIAGE: 'var(--warn)', NEW: 'var(--warn)', BLOCKED: 'var(--bad)', FAILED: 'var(--bad)', AWAITING_RELEASE: 'var(--acc)', REVIEW: 'var(--acc)' } as Record<string, string>)[st]
+

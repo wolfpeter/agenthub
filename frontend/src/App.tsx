@@ -83,6 +83,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           <span className="text-[12px] text-mut whitespace-nowrap" title={live ? 'Élő kapcsolat' : 'Újracsatlakozás…'}>
             <span className={'dot ' + (live ? 'on' : 'off')} />{live ? 'élő' : 'újracsatlakozás…'}
           </span>
+          <ThemeButton />
           <button className="btn" onClick={logout}>Kilépés</button>
         </div>
   )
@@ -128,6 +129,18 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       )}
     </>
   )
+}
+
+function ThemeButton() {
+  const sys = () => matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  const [t, setT] = useState(() => document.documentElement.dataset.theme || sys())
+  const flip = () => {
+    const n = t === 'dark' ? 'light' : 'dark'
+    document.documentElement.dataset.theme = n
+    try { localStorage.setItem('theme', n) } catch { /* tiltott tároló */ }
+    setT(n)
+  }
+  return <button className="btn" onClick={flip} title={t === 'dark' ? 'Világos téma' : 'Sötét téma'} aria-label={t === 'dark' ? 'Világos téma' : 'Sötét téma'}>{t === 'dark' ? '☀' : '☾'}</button>
 }
 
 // sok projektnél is alacsony marad: összesítő, a részletek a kiválasztott projektnél (a projektfülön)

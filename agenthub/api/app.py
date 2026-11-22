@@ -483,6 +483,7 @@ def ticket_detail(tid: int, p: Principal = Any):
         d["actions"] = [_action(a) for a in s.scalars(select(PendingAction).where(PendingAction.ticket_id == tid)
                                                       .order_by(PendingAction.id))]
         d["runs"] = [ser.row(r) for r in s.scalars(select(AgentRun).where(AgentRun.ticket_id == tid).order_by(AgentRun.id))]
+        d["comments"] = sv.comments(s, tid)
         d["source_refs"] = [ser.row(r) for r in s.scalars(select(TicketSourceRef).where(TicketSourceRef.ticket_id == tid)
                                                            .order_by(TicketSourceRef.id))]
         return d
@@ -610,6 +611,7 @@ def _worker_payload(s, t, resumed, p):
     d = ser.ticket(t)
     if len(d.get("description") or "") > 3000:
         d["description"] = d["description"][:3000] + "… (a teljes leírás: agenthub ticket show)"
+    d["comments"] = sv.comments(s, t.id)  # Peter megjegyzései: utasítás a Workernek
     return {"ticket": d, "lease_id": t.current_lease_id, "resumed": resumed, "model": model,
             "escalate_to": gc.models.escalate_to}
 
@@ -678,6 +680,13 @@ class NoteIn(BaseModel):
 def ticket_note(tid: int, body: NoteIn, request: Request, p: Principal = Worker):
     with db.session() as s:
         sv.note(s, p, tid, body.text, instance(request), lease(request))
+    return {"ok": True}
+
+
+@app.post("/api/tickets/{tid}/comment")
+def ticket_comment(tid: int, body: NoteIn, p: Principal = Dash):
+    with db.session() as s:
+        sv.comment(s, p, tid, body.text)
     return {"ok": True}
 
 

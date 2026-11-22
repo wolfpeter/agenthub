@@ -596,6 +596,22 @@ def _own_in_progress(s, who: Principal, tid: int, instance_id: str | None, lease
     return t
 
 
+def comment(s, who: Principal, tid: int, text: str):
+    """Peter megjegyzése a Dashboardról: a Worker utasításként kapja (a ticket többi szövege adat)."""
+    if not text.strip():
+        raise Invalid("üres megjegyzés")
+    t = get_ticket(s, who, tid)
+    event(s, t, who, "comment", payload={"text": text.strip()[:4000]})
+    t.updated_at = now()
+    changed(ticket=t.id)
+
+
+def comments(s, tid: int) -> list[dict]:
+    return [{"text": e.payload.get("text"), "at": e.created_at.isoformat()} for e in s.scalars(
+        select(TicketEvent).where(TicketEvent.ticket_id == tid, TicketEvent.event_type == "comment",
+                                  TicketEvent.actor_type == "human").order_by(TicketEvent.id)) if e.payload]
+
+
 def note(s, who: Principal, tid: int, text: str, instance_id: str | None = None, lease_id: str | None = None):
     t = _own_in_progress(s, who, tid, instance_id, lease_id)
     event(s, t, who, "note", payload={"text": text[:4000]})
